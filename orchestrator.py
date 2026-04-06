@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import sys
+from datetime import datetime, timedelta
 
 from google.adk.agents import LlmAgent
 from google.adk.sessions import InMemorySessionService
@@ -114,6 +115,11 @@ class Orchestrator:
 
     async def run(self, request: str, callback=None) -> dict:
         """Run all 3 ADK agents in parallel, then merge results."""
+        # Inject current date context so agents know what "today"/"tomorrow" means
+        now = datetime.now()
+        tomorrow = now + timedelta(days=1)
+        context = f"[Current date: {now.strftime('%Y-%m-%d')} ({now.strftime('%A')}). Tomorrow: {tomorrow.strftime('%Y-%m-%d')} ({tomorrow.strftime('%A')}).]\n\n{request}"
+
         # Signal agent start
         if callback:
             for name, color in [("red", "#EF4444"), ("blue", "#3B82F6"), ("green", "#10B981")]:
@@ -121,9 +127,9 @@ class Orchestrator:
 
         # Run ADK agents in parallel
         results: list[AgentResult] = await asyncio.gather(
-            self._run_agent(self._red, "red", "#EF4444", request, callback),
-            self._run_agent(self._blue, "blue", "#3B82F6", request, callback),
-            self._run_agent(self._green, "green", "#10B981", request, callback),
+            self._run_agent(self._red, "red", "#EF4444", context, callback),
+            self._run_agent(self._blue, "blue", "#3B82F6", context, callback),
+            self._run_agent(self._green, "green", "#10B981", context, callback),
         )
 
         red_result, blue_result, green_result = results
