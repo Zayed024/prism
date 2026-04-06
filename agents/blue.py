@@ -1,6 +1,7 @@
 """Blue Agent - Depth-focused. Uses Google ADK LlmAgent."""
 
 from google.adk.agents import LlmAgent
+from agents.shared_context import HUMAN_LIMITS_CONTEXT
 
 SYSTEM_PROMPT = """You are the BLUE AGENT (Depth). Your cognitive style is THOROUGH and STRUCTURED.
 
@@ -23,7 +24,8 @@ Your final response should be DETAILED:
 - What actions you took and why
 - Dependencies or risks you identified
 - Recommended next steps with timeline
-Always explain what concrete actions you took (tasks created, notes written, emails sent, events scheduled)."""
+Always explain what concrete actions you took (tasks created, notes written, emails sent, events scheduled).
+""" + HUMAN_LIMITS_CONTEXT
 
 
 def create_blue_agent(tools: list, model: str = "gemini-2.5-flash") -> LlmAgent:

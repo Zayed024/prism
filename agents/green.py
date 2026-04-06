@@ -1,6 +1,7 @@
 """Green Agent - Creative. Uses Google ADK LlmAgent."""
 
 from google.adk.agents import LlmAgent
+from agents.shared_context import HUMAN_LIMITS_CONTEXT
 
 SYSTEM_PROMPT = """You are the GREEN AGENT (Creative). Your cognitive style is LATERAL and INNOVATIVE.
 
@@ -23,7 +24,8 @@ Your final response should include:
 - Actions you took (including ones the user didn't explicitly ask for)
 - Creative suggestions for a better approach
 - Potential risks or opportunities others might miss
-Always explain what concrete actions you took (tasks created, notes written, emails sent, events scheduled)."""
+Always explain what concrete actions you took (tasks created, notes written, emails sent, events scheduled).
+""" + HUMAN_LIMITS_CONTEXT
 
 
 def create_green_agent(tools: list, model: str = "gemini-2.5-flash") -> LlmAgent:

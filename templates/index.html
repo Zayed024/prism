@@ -544,6 +544,9 @@ async function loadTasks() {
         el.innerHTML = tasks.map(t => {
             const statusColors = { todo: 'bg-slate-600', in_progress: 'bg-amber-600', done: 'bg-emerald-600' };
             const prioColors = { high: 'text-red-400', medium: 'text-amber-400', low: 'text-slate-400' };
+            const m = t.momentum || 50;
+            const mColor = m > 70 ? '#10B981' : m > 40 ? '#F59E0B' : '#EF4444';
+            const mTrend = { active: 'Active', stable: 'Stable', declining: 'Declining', stale: 'Stale', completed: 'Done', unknown: '' };
             return `<div class="glass rounded-lg px-4 py-3 flex items-center justify-between group">
                 <div class="flex items-center gap-3">
                     <button onclick="cycleTaskStatus(${t.id},'${t.status}')" title="Click to change status" class="text-xs px-2 py-0.5 rounded ${statusColors[t.status] || 'bg-slate-600'} text-white hover:opacity-80 transition cursor-pointer">${t.status}</button>
@@ -553,6 +556,10 @@ async function loadTasks() {
                     </div>
                 </div>
                 <div class="flex items-center gap-3 text-xs">
+                    ${t.status !== 'done' ? `<div class="flex items-center gap-1" title="Momentum: ${m}% (${mTrend[t.momentum_trend] || ''})">
+                        <div class="w-12 h-1.5 rounded-full bg-slate-700 overflow-hidden"><div class="h-full rounded-full" style="width:${m}%;background:${mColor}"></div></div>
+                        <span class="text-[10px]" style="color:${mColor}">${m}%</span>
+                    </div>` : ''}
                     ${t.tags?.map(tag => `<span class="px-2 py-0.5 rounded bg-slate-800 text-slate-400">${esc(tag)}</span>`).join('') || ''}
                     <span class="${prioColors[t.priority] || ''}">${t.priority}</span>
                     ${t.due_date ? `<span class="text-slate-500">${new Date(t.due_date).toLocaleDateString()}</span>` : ''}

@@ -1,6 +1,7 @@
 """Red Agent - Speed-focused. Uses Google ADK LlmAgent."""
 
 from google.adk.agents import LlmAgent
+from agents.shared_context import HUMAN_LIMITS_CONTEXT
 
 SYSTEM_PROMPT = """You are the RED AGENT (Speed). Your cognitive style is FAST and ACTION-ORIENTED.
 
@@ -18,7 +19,8 @@ When responding to the user's request:
 3. Provide a brief summary of what you did and why
 
 Keep your final response SHORT — bullet points preferred over paragraphs.
-Always explain what concrete actions you took (tasks created, notes written, emails sent, events scheduled)."""
+Always explain what concrete actions you took (tasks created, notes written, emails sent, events scheduled).
+""" + HUMAN_LIMITS_CONTEXT
 
 
 def create_red_agent(tools: list, model: str = "gemini-2.5-flash") -> LlmAgent:

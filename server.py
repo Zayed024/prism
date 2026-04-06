@@ -19,6 +19,7 @@ from fastapi.templating import Jinja2Templates
 from sse_starlette.sse import EventSourceResponse
 
 from core.mcp_client import MCPClient
+import math
 from models import PrismRequest, CreateTaskRequest, CreateNoteRequest, UpdateTaskRequest
 from orchestrator import Orchestrator
 
@@ -185,13 +186,14 @@ async def get_tasks(status: str = "", priority: str = ""):
             query += f" AND priority = ${idx}"; params.append(priority); idx += 1
         query += " ORDER BY created_at DESC"
         rows = await _db_pool.fetch(query, *params)
-        return [_row_to_dict(r) for r in rows]
+        return [_add_momentum(_row_to_dict(r)) for r in rows]
     args = {}
     if status: args["status"] = status
     if priority: args["priority"] = priority
     result = await _mcp_clients["tasks"].call_tool("list_tasks", args)
     if result and result.content:
-        return json.loads(result.content[0].text)
+        tasks = json.loads(result.content[0].text)
+        return [_add_momentum(t) for t in tasks]
     return []
 
 
@@ -321,6 +323,38 @@ def _row_to_dict(row) -> dict:
         if isinstance(v, datetime):
             d[k] = v.isoformat()
     return d
+
+
+def _add_momentum(task: dict) -> dict:
+    """Add momentum score — decays 5% per day of inactivity (Akasha physics model)."""
+    if task.get("status") == "done":
+        task["momentum"] = 100
+        task["momentum_trend"] = "completed"
+        return task
+    updated = task.get("updated_at") or task.get("created_at", "")
+    if not updated:
+        task["momentum"] = 50
+        task["momentum_trend"] = "unknown"
+        return task
+    try:
+        last_touch = datetime.fromisoformat(updated.replace("Z", "+00:00")).replace(tzinfo=None)
+        days_idle = (datetime.now() - last_touch).total_seconds() / 86400
+        # Exponential decay: M(t) = 100 * e^(-0.05 * days)
+        momentum = max(5, min(100, int(100 * math.exp(-0.05 * days_idle))))
+        if days_idle < 1:
+            trend = "active"
+        elif days_idle < 3:
+            trend = "stable"
+        elif days_idle < 7:
+            trend = "declining"
+        else:
+            trend = "stale"
+        task["momentum"] = momentum
+        task["momentum_trend"] = trend
+    except Exception:
+        task["momentum"] = 50
+        task["momentum_trend"] = "unknown"
+    return task
 
 
 if __name__ == "__main__":
