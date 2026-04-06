@@ -84,6 +84,32 @@
                 </div>
             </div>
 
+            <!-- Pipeline Stepper -->
+            <div id="pipeline-stepper" class="hidden glass rounded-xl px-6 py-3 mb-6 flex items-center justify-between">
+                <div class="flex items-center gap-0 flex-1">
+                    <div id="step-context" class="flex items-center gap-1.5 text-xs text-slate-500">
+                        <div class="w-6 h-6 rounded-full border-2 border-slate-600 flex items-center justify-center text-[10px] font-bold">1</div>
+                        <span class="hidden sm:inline">Context</span>
+                    </div>
+                    <div class="flex-1 h-0.5 bg-slate-700 mx-2"><div id="step-line-1" class="h-full bg-slate-700 w-0 transition-all duration-500"></div></div>
+                    <div id="step-agents" class="flex items-center gap-1.5 text-xs text-slate-500">
+                        <div class="w-6 h-6 rounded-full border-2 border-slate-600 flex items-center justify-center text-[10px] font-bold">2</div>
+                        <span class="hidden sm:inline">Agents</span>
+                    </div>
+                    <div class="flex-1 h-0.5 bg-slate-700 mx-2"><div id="step-line-2" class="h-full bg-slate-700 w-0 transition-all duration-500"></div></div>
+                    <div id="step-negotiation" class="flex items-center gap-1.5 text-xs text-slate-500">
+                        <div class="w-6 h-6 rounded-full border-2 border-slate-600 flex items-center justify-center text-[10px] font-bold">3</div>
+                        <span class="hidden sm:inline">Negotiate</span>
+                    </div>
+                    <div class="flex-1 h-0.5 bg-slate-700 mx-2"><div id="step-line-3" class="h-full bg-slate-700 w-0 transition-all duration-500"></div></div>
+                    <div id="step-merge" class="flex items-center gap-1.5 text-xs text-slate-500">
+                        <div class="w-6 h-6 rounded-full border-2 border-slate-600 flex items-center justify-center text-[10px] font-bold">4</div>
+                        <span class="hidden sm:inline">Merge</span>
+                    </div>
+                </div>
+                <div id="pipeline-timer" class="ml-4 text-xs text-slate-500 font-mono tabular-nums w-12 text-right">0.0s</div>
+            </div>
+
             <!-- Agent columns -->
             <div id="agent-area" class="hidden">
                 <div class="grid grid-cols-3 gap-4 mb-6">
@@ -246,8 +272,18 @@
     </main>
 
     <!-- Footer -->
-    <footer class="border-t border-slate-800 mt-12 py-4 text-center text-xs text-slate-600">
-        Powered by Gemini 2.5 Flash + MCP + AlloyDB + FastAPI | Built for Gen AI Academy APAC Edition
+    <footer class="border-t border-slate-800 mt-12 py-6">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="flex items-center justify-center gap-3 flex-wrap mb-2">
+                <span class="px-2.5 py-1 rounded-md bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-400 font-medium">Google ADK</span>
+                <span class="px-2.5 py-1 rounded-md bg-violet-500/10 border border-violet-500/20 text-[11px] text-violet-400 font-medium">Gemini 2.5 Flash</span>
+                <span class="px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400 font-medium">MCP Protocol</span>
+                <span class="px-2.5 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400 font-medium">AlloyDB AI</span>
+                <span class="px-2.5 py-1 rounded-md bg-red-500/10 border border-red-500/20 text-[11px] text-red-400 font-medium">Cloud Run</span>
+                <span class="px-2.5 py-1 rounded-md bg-slate-500/10 border border-slate-500/20 text-[11px] text-slate-400 font-medium">FastAPI</span>
+            </div>
+            <p class="text-center text-[11px] text-slate-600">Built for Gen AI Academy APAC Edition</p>
+        </div>
     </footer>
 
 <script>
@@ -287,12 +323,58 @@ async function loadStats() {
     } catch(e) {}
 }
 
+// ── Pipeline Stepper ──
+let _timerStart = 0;
+let _timerInterval = null;
+
+function resetStepper() {
+    document.getElementById('pipeline-stepper').classList.remove('hidden');
+    ['context','agents','negotiation','merge'].forEach(s => {
+        const el = document.getElementById('step-' + s);
+        el.querySelector('div').className = 'w-6 h-6 rounded-full border-2 border-slate-600 flex items-center justify-center text-[10px] font-bold';
+        el.classList.remove('text-white'); el.classList.add('text-slate-500');
+    });
+    ['step-line-1','step-line-2','step-line-3'].forEach(id => {
+        document.getElementById(id).style.width = '0%';
+        document.getElementById(id).className = 'h-full bg-slate-700 w-0 transition-all duration-500';
+    });
+    document.getElementById('pipeline-timer').textContent = '0.0s';
+    _timerStart = Date.now();
+    if (_timerInterval) clearInterval(_timerInterval);
+    _timerInterval = setInterval(() => {
+        document.getElementById('pipeline-timer').textContent = ((Date.now() - _timerStart) / 1000).toFixed(1) + 's';
+    }, 100);
+}
+
+function activateStep(name) {
+    const el = document.getElementById('step-' + name);
+    el.querySelector('div').className = 'w-6 h-6 rounded-full border-2 border-blue-500 bg-blue-500/20 flex items-center justify-center text-[10px] font-bold text-blue-400';
+    el.classList.remove('text-slate-500'); el.classList.add('text-blue-400');
+}
+
+function completeStep(name, lineId) {
+    const el = document.getElementById('step-' + name);
+    el.querySelector('div').className = 'w-6 h-6 rounded-full border-2 border-emerald-500 bg-emerald-500 flex items-center justify-center text-[10px] font-bold text-white';
+    el.classList.remove('text-slate-500', 'text-blue-400'); el.classList.add('text-emerald-400');
+    if (lineId) {
+        const line = document.getElementById(lineId);
+        line.style.width = '100%';
+        line.className = 'h-full bg-emerald-500 transition-all duration-500';
+    }
+}
+
+function stopTimer() {
+    if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
+    document.getElementById('pipeline-timer').textContent = ((Date.now() - _timerStart) / 1000).toFixed(1) + 's';
+}
+
 // ── Run Prism (SSE) ──
 function runPrism() {
     const query = document.getElementById('query-input').value.trim();
     if (!query) return;
 
     // Reset UI
+    resetStepper();
     const area = document.getElementById('agent-area');
     area.classList.remove('hidden');
     ['red', 'blue', 'green'].forEach(a => {
@@ -320,6 +402,7 @@ function runPrism() {
 
     // Phase 1: Smart Context
     es.addEventListener('context_gathering', (e) => {
+        activateStep('context');
         const panel = document.getElementById('context-panel');
         panel.classList.remove('hidden');
         panel.classList.add('fade-in');
@@ -328,6 +411,7 @@ function runPrism() {
     });
 
     es.addEventListener('context_done', (e) => {
+        completeStep('context', 'step-line-1');
         const data = JSON.parse(e.data);
         document.getElementById('context-status').innerHTML = '<span class="text-emerald-400 text-[10px]">Done</span>';
         const ctx = data.context || 'No additional context found.';
@@ -336,6 +420,7 @@ function runPrism() {
 
     // Phase 2: Agents
     es.addEventListener('agent_start', (e) => {
+        activateStep('agents');
         const data = JSON.parse(e.data);
         const el = document.getElementById('status-' + data.agent);
         el.innerHTML = '<span class="spinner" style="border-top-color:' + data.color + '"></span><span>Working...</span>';
@@ -380,6 +465,8 @@ function runPrism() {
 
     // Phase 3: Negotiation
     es.addEventListener('negotiation_start', () => {
+        completeStep('agents', 'step-line-2');
+        activateStep('negotiation');
         const panel = document.getElementById('negotiation-panel');
         panel.classList.remove('hidden');
         panel.classList.add('fade-in');
@@ -404,6 +491,8 @@ function runPrism() {
 
     // Phase 4: Merge
     es.addEventListener('merge_start', () => {
+        completeStep('negotiation', 'step-line-3');
+        activateStep('merge');
         const panel = document.getElementById('merge-panel');
         panel.classList.remove('hidden');
         panel.classList.add('fade-in');
@@ -458,6 +547,8 @@ function runPrism() {
 
     function finish() {
         es.close();
+        completeStep('merge', null);
+        stopTimer();
         btn.disabled = false;
         btn.innerHTML = 'Run Prism';
         loadStats();
