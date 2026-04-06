@@ -1,7 +1,6 @@
-"""Red Agent - Speed-focused. Minimum viable action, fast execution."""
+"""Red Agent - Speed-focused. Uses Google ADK LlmAgent."""
 
-from agents.base import BaseAgent
-from core.tool_manager import ToolManager
+from google.adk.agents import LlmAgent
 
 SYSTEM_PROMPT = """You are the RED AGENT (Speed). Your cognitive style is FAST and ACTION-ORIENTED.
 
@@ -22,13 +21,10 @@ Keep your final response SHORT — bullet points preferred over paragraphs.
 Always explain what concrete actions you took (tasks created, notes written, emails sent, events scheduled)."""
 
 
-class RedAgent(BaseAgent):
-    def __init__(self, tool_manager: ToolManager, model: str = "gemini-2.5-flash"):
-        super().__init__(
-            name="red",
-            color="#EF4444",
-            system_prompt=SYSTEM_PROMPT,
-            tool_manager=tool_manager,
-            model=model,
-            max_iterations=3,
-        )
+def create_red_agent(tools: list, model: str = "gemini-2.5-flash") -> LlmAgent:
+    return LlmAgent(
+        name="red_agent",
+        model=model,
+        instruction=SYSTEM_PROMPT,
+        tools=tools,
+    )

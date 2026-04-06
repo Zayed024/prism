@@ -32,15 +32,25 @@ class GeminiAgent:
             system_instruction=system_prompt if system_prompt else None,
         )
 
-    async def generate(self, contents: list, tools=None) -> protos.GenerateContentResponse:
-        """Call Gemini with contents and optional tools. Returns raw response."""
+    async def generate(self, contents: list, tools=None, max_retries: int = 3) -> protos.GenerateContentResponse:
+        """Call Gemini with contents and optional tools. Retries on rate limit."""
         kwargs = {"contents": contents}
         if tools:
             kwargs["tools"] = tools
-        response = await asyncio.to_thread(
-            self.model.generate_content, **kwargs
-        )
-        return response
+
+        for attempt in range(max_retries):
+            try:
+                response = await asyncio.to_thread(
+                    self.model.generate_content, **kwargs
+                )
+                return response
+            except Exception as e:
+                if "429" in str(e) and attempt < max_retries - 1:
+                    wait = 2 ** (attempt + 1)  # 2, 4, 8 seconds
+                    print(f"[Gemini] Rate limited, retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(wait)
+                else:
+                    raise
 
     @staticmethod
     def extract_function_calls(response) -> list:

@@ -204,6 +204,39 @@ async def search_tasks(
     return json.dumps(matched[:20])
 
 
+@mcp.tool(name="semantic_search_tasks", description="Semantic search for tasks using AI embeddings. Finds tasks by meaning, not just keywords. Powered by AlloyDB AI. Only works when connected to AlloyDB.")
+async def semantic_search_tasks(
+    query: str = Field(description="Natural language search query"),
+    limit: int = Field(default=5, description="Max results to return"),
+    ctx=None,
+) -> str:
+    if _use_db:
+        pool = ctx.request_context.lifespan_context["pool"]
+        try:
+            rows = await pool.fetch(
+                "SELECT * FROM semantic_search_tasks($1, $2)",
+                query, limit,
+            )
+            return json.dumps([_row_to_dict(r) for r in rows], default=str)
+        except Exception as e:
+            # Fallback to keyword search if embeddings not set up
+            return await search_tasks(query=query, ctx=ctx)
+
+    # Mock: simple relevance-scored keyword search
+    q = query.lower()
+    scored = []
+    for t in MOCK_TASKS:
+        score = 0
+        text = f"{t['title']} {t.get('description', '')}".lower()
+        for word in q.split():
+            if word in text:
+                score += 1
+        if score > 0:
+            scored.append({**t, "similarity": round(score / max(len(q.split()), 1), 2)})
+    scored.sort(key=lambda x: x["similarity"], reverse=True)
+    return json.dumps(scored[:limit])
+
+
 if __name__ == "__main__":
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())

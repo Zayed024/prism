@@ -1,10 +1,13 @@
-"""Prism - Multi-Agent Productivity Assistant API Server."""
+"""Prism - Multi-Agent Productivity Assistant API Server.
+
+Built with Google ADK (Agent Development Kit), MCP, and AlloyDB.
+"""
 
 import asyncio
 import json
 import os
 import sys
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 import asyncpg
@@ -16,63 +19,42 @@ from fastapi.templating import Jinja2Templates
 from sse_starlette.sse import EventSourceResponse
 
 from core.mcp_client import MCPClient
-from core.tool_manager import ToolManager
 from models import PrismRequest
 from orchestrator import Orchestrator
 
 load_dotenv()
 
-# Globals set during lifespan
-_mcp_clients: dict[str, MCPClient] = {}
-_tool_manager: ToolManager | None = None
+# Globals
 _orchestrator: Orchestrator | None = None
-_exit_stack: AsyncExitStack | None = None
 _db_pool: asyncpg.Pool | None = None
+_mcp_clients: dict[str, MCPClient] = {}  # For REST endpoint fallback
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _mcp_clients, _tool_manager, _orchestrator, _exit_stack, _db_pool
-
-    stack = AsyncExitStack()
-    _exit_stack = stack
+    global _orchestrator, _db_pool, _mcp_clients
 
     database_url = os.environ.get("DATABASE_URL", "")
     gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-
-    # Detect the Python command (for Cloud Run vs local)
     python_cmd = sys.executable
-
-    # Environment for MCP server subprocesses
     env = {**os.environ}
 
-    # Start MCP servers
-    print("[Prism] Starting MCP servers...")
+    # Initialize ADK orchestrator (manages MCP toolsets internally)
+    print("[Prism] Initializing ADK orchestrator...")
+    _orchestrator = Orchestrator(model=gemini_model)
+    await _orchestrator.initialize(python_cmd=python_cmd, env=env)
+
+    # MCP clients for REST endpoints (separate from ADK's toolsets)
+    from contextlib import AsyncExitStack
+    stack = AsyncExitStack()
 
     _mcp_clients["tasks"] = await stack.enter_async_context(
         MCPClient(command=python_cmd, args=["mcp_servers/tasks_server.py"], env=env)
     )
-    print("[Prism] Tasks MCP connected")
-
     _mcp_clients["notes"] = await stack.enter_async_context(
         MCPClient(command=python_cmd, args=["mcp_servers/notes_server.py"], env=env)
     )
-    print("[Prism] Notes MCP connected")
-
-    _mcp_clients["calendar"] = await stack.enter_async_context(
-        MCPClient(command=python_cmd, args=["mcp_servers/calendar_server.py"], env=env)
-    )
-    print("[Prism] Calendar MCP connected")
-
-    _mcp_clients["email"] = await stack.enter_async_context(
-        MCPClient(command=python_cmd, args=["mcp_servers/email_server.py"], env=env)
-    )
-    print("[Prism] Email MCP connected")
-
-    # Create tool manager and orchestrator
-    _tool_manager = ToolManager(_mcp_clients)
-    _orchestrator = Orchestrator(_tool_manager, model=gemini_model)
-    print(f"[Prism] Orchestrator ready (model: {gemini_model})")
+    print("[Prism] REST MCP clients connected")
 
     # Direct DB pool for REST endpoints
     if database_url:
@@ -80,13 +62,12 @@ async def lifespan(app: FastAPI):
             _db_pool = await asyncpg.create_pool(database_url, min_size=1, max_size=5)
             print("[Prism] Database pool ready")
         except Exception as e:
-            print(f"[Prism] DB pool failed (REST endpoints will use MCP): {e}")
+            print(f"[Prism] DB pool failed: {e}")
     else:
-        print("[Prism] No DATABASE_URL, REST endpoints will query via MCP")
+        print("[Prism] No DATABASE_URL, REST endpoints use MCP fallback")
 
     yield
 
-    # Cleanup
     if _db_pool:
         await _db_pool.close()
     await stack.aclose()
@@ -115,7 +96,7 @@ async def index(request: Request):
 
 @app.get("/api/prism")
 async def prism_sse(query: str):
-    """Run Prism via SSE (GET for EventSource compatibility)."""
+    """Run Prism via SSE — 3 ADK agents in parallel, merged result."""
     queue: asyncio.Queue = asyncio.Queue()
 
     async def callback(event: dict):
@@ -124,24 +105,28 @@ async def prism_sse(query: str):
     async def run_orchestrator():
         try:
             result = await _orchestrator.run(query, callback=callback)
-            # Save session to DB
+            # Save session + performance to DB
             if _db_pool:
                 try:
-                    await _db_pool.execute(
+                    row = await _db_pool.fetchrow(
                         """INSERT INTO prism_sessions (user_request, red_response, blue_response, green_response, merged_result)
-                           VALUES ($1, $2, $3, $4, $5)""",
+                           VALUES ($1, $2, $3, $4, $5) RETURNING id""",
                         query,
                         json.dumps(result["agents"].get("red", {})),
                         json.dumps(result["agents"].get("blue", {})),
                         json.dumps(result["agents"].get("green", {})),
                         json.dumps(result["merged"]),
                     )
+                    if row:
+                        await Orchestrator.log_performance(
+                            _db_pool, row["id"], result["agents"], result["merged"]
+                        )
                 except Exception as e:
                     print(f"[Prism] Failed to save session: {e}")
         except Exception as e:
             await queue.put({"type": "error", "message": str(e)})
         finally:
-            await queue.put(None)  # Signal end
+            await queue.put(None)
 
     async def event_generator():
         task = asyncio.create_task(run_orchestrator())
@@ -149,10 +134,7 @@ async def prism_sse(query: str):
             event = await queue.get()
             if event is None:
                 break
-            yield {
-                "event": event["type"],
-                "data": json.dumps(event),
-            }
+            yield {"event": event["type"], "data": json.dumps(event)}
         await task
 
     return EventSourceResponse(event_generator())
@@ -162,8 +144,6 @@ async def prism_sse(query: str):
 async def prism_post(request: PrismRequest):
     """Run Prism synchronously (for non-SSE clients)."""
     result = await _orchestrator.run(request.query)
-
-    # Save session
     session_id = None
     if _db_pool:
         try:
@@ -203,7 +183,6 @@ async def get_tasks(status: str = "", priority: str = ""):
         query += " ORDER BY created_at DESC"
         rows = await _db_pool.fetch(query, *params)
         return [_row_to_dict(r) for r in rows]
-    # Fallback: query via MCP
     args = {}
     if status: args["status"] = status
     if priority: args["priority"] = priority
@@ -227,7 +206,7 @@ async def get_notes():
 @app.get("/api/history")
 async def get_history(limit: int = 20):
     if not _db_pool:
-        return []  # No history without DB
+        return []
     rows = await _db_pool.fetch(
         "SELECT id, user_request, merged_result, created_at FROM prism_sessions ORDER BY created_at DESC LIMIT $1",
         limit,
@@ -242,7 +221,6 @@ async def get_stats():
         notes = await _db_pool.fetchval("SELECT COUNT(*) FROM notes")
         sessions = await _db_pool.fetchval("SELECT COUNT(*) FROM prism_sessions")
         return {"tasks": tasks, "notes": notes, "sessions": sessions}
-    # Fallback: count via MCP
     try:
         t = await _mcp_clients["tasks"].call_tool("list_tasks", {})
         n = await _mcp_clients["notes"].call_tool("list_notes", {})
@@ -251,6 +229,30 @@ async def get_stats():
         return {"tasks": tc, "notes": nc, "sessions": 0}
     except Exception:
         return {"tasks": 0, "notes": 0, "sessions": 0}
+
+
+@app.get("/api/agent-stats")
+async def get_agent_stats():
+    """Agent performance analytics — which agent gets selected most."""
+    if not _db_pool:
+        return {"red": {"selected": 0, "total": 0}, "blue": {"selected": 0, "total": 0}, "green": {"selected": 0, "total": 0}}
+    rows = await _db_pool.fetch(
+        """SELECT agent_name,
+                  COUNT(*) as total,
+                  SUM(CASE WHEN was_selected THEN 1 ELSE 0 END) as selected,
+                  AVG(execution_time_ms) as avg_time_ms
+           FROM agent_performance
+           GROUP BY agent_name"""
+    )
+    stats = {}
+    for r in rows:
+        stats[r["agent_name"]] = {
+            "selected": int(r["selected"]),
+            "total": int(r["total"]),
+            "avg_time_ms": int(r["avg_time_ms"] or 0),
+            "win_rate": round(int(r["selected"]) / max(int(r["total"]), 1) * 100, 1),
+        }
+    return stats
 
 
 # ── Helpers ───────────────────────────────────────────────────

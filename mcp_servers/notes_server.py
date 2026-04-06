@@ -161,6 +161,37 @@ async def link_note_to_task(
     return json.dumps(note)
 
 
+@mcp.tool(name="semantic_search_notes", description="Semantic search for notes using AI embeddings. Finds notes by meaning, not just keywords. Powered by AlloyDB AI. Only works when connected to AlloyDB.")
+async def semantic_search_notes(
+    query: str = Field(description="Natural language search query"),
+    limit: int = Field(default=5, description="Max results to return"),
+    ctx=None,
+) -> str:
+    if _use_db:
+        pool = ctx.request_context.lifespan_context["pool"]
+        try:
+            rows = await pool.fetch(
+                "SELECT * FROM semantic_search_notes($1, $2)",
+                query, limit,
+            )
+            return json.dumps([_row_to_dict(r) for r in rows], default=str)
+        except Exception as e:
+            return await search_notes(query=query, ctx=ctx)
+
+    q = query.lower()
+    scored = []
+    for n in MOCK_NOTES:
+        score = 0
+        text = f"{n['title']} {n.get('content', '')}".lower()
+        for word in q.split():
+            if word in text:
+                score += 1
+        if score > 0:
+            scored.append({**n, "similarity": round(score / max(len(q.split()), 1), 2)})
+    scored.sort(key=lambda x: x["similarity"], reverse=True)
+    return json.dumps(scored[:limit])
+
+
 if __name__ == "__main__":
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())

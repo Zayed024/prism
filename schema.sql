@@ -1,6 +1,20 @@
 -- Prism: Multi-Agent Productivity Assistant
 -- Database schema for AlloyDB/PostgreSQL
 
+-- Enable AlloyDB AI extensions
+CREATE EXTENSION IF NOT EXISTS google_ml_integration CASCADE;
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Register Gemini model for in-database AI
+-- CALL google_ml.create_model(
+--     model_id => 'gemini-embedding',
+--     model_request_url => 'https://aiplatform.googleapis.com/v1/projects/responsive-amp-438114-j0/locations/us-central1/publishers/google/models/text-embedding-005:predict',
+--     model_qualified_name => 'text-embedding-005',
+--     model_provider => 'google',
+--     model_type => 'text_embedding',
+--     model_auth_type => 'alloydb_service_agent_iam'
+-- );
+
 -- Tasks table
 CREATE TABLE IF NOT EXISTS tasks (
     id SERIAL PRIMARY KEY,
@@ -48,12 +62,104 @@ CREATE TABLE IF NOT EXISTS agent_performance (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Embedding columns for AlloyDB AI semantic search
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS embedding vector(768);
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding vector(768);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_notes_linked_task ON notes(linked_task_id);
 CREATE INDEX IF NOT EXISTS idx_perf_session ON agent_performance(session_id);
+
+-- Vector indexes for semantic search (HNSW for fast approximate nearest neighbor)
+-- CREATE INDEX IF NOT EXISTS idx_tasks_embedding ON tasks USING hnsw (embedding vector_cosine_ops);
+-- CREATE INDEX IF NOT EXISTS idx_notes_embedding ON notes USING hnsw (embedding vector_cosine_ops);
+
+-- Function: Generate embedding using AlloyDB AI (google_ml.predict_row)
+-- This calls Vertex AI's text-embedding model directly from the database
+CREATE OR REPLACE FUNCTION generate_embedding(input_text TEXT)
+RETURNS vector AS $$
+DECLARE
+    result JSON;
+    embedding_array FLOAT[];
+BEGIN
+    SELECT google_ml.predict_row(
+        model_id => 'gemini-embedding',
+        request_body => json_build_object(
+            'instances', json_build_array(
+                json_build_object('content', input_text)
+            )
+        )::json
+    ) INTO result;
+
+    SELECT ARRAY(
+        SELECT json_array_elements_text(
+            result->'predictions'->0->'embeddings'->'values'
+        )::FLOAT
+    ) INTO embedding_array;
+
+    RETURN embedding_array::vector;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function: Semantic search across tasks
+CREATE OR REPLACE FUNCTION semantic_search_tasks(query_text TEXT, match_limit INT DEFAULT 5)
+RETURNS TABLE(id INT, title VARCHAR, description TEXT, status VARCHAR, priority VARCHAR, similarity FLOAT) AS $$
+DECLARE
+    query_embedding vector;
+BEGIN
+    query_embedding := generate_embedding(query_text);
+    RETURN QUERY
+        SELECT t.id, t.title, t.description, t.status, t.priority,
+               1 - (t.embedding <=> query_embedding)::FLOAT AS similarity
+        FROM tasks t
+        WHERE t.embedding IS NOT NULL
+        ORDER BY t.embedding <=> query_embedding
+        LIMIT match_limit;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function: Semantic search across notes
+CREATE OR REPLACE FUNCTION semantic_search_notes(query_text TEXT, match_limit INT DEFAULT 5)
+RETURNS TABLE(id INT, title VARCHAR, content TEXT, similarity FLOAT) AS $$
+DECLARE
+    query_embedding vector;
+BEGIN
+    query_embedding := generate_embedding(query_text);
+    RETURN QUERY
+        SELECT n.id, n.title, n.content,
+               1 - (n.embedding <=> query_embedding)::FLOAT AS similarity
+        FROM notes n
+        WHERE n.embedding IS NOT NULL
+        ORDER BY n.embedding <=> query_embedding
+        LIMIT match_limit;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger: Auto-generate embeddings on insert/update
+CREATE OR REPLACE FUNCTION auto_embed_task() RETURNS TRIGGER AS $$
+BEGIN
+    NEW.embedding := generate_embedding(NEW.title || ' ' || COALESCE(NEW.description, ''));
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION auto_embed_note() RETURNS TRIGGER AS $$
+BEGIN
+    NEW.embedding := generate_embedding(NEW.title || ' ' || COALESCE(NEW.content, ''));
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- DROP TRIGGER IF EXISTS trg_task_embed ON tasks;
+-- CREATE TRIGGER trg_task_embed BEFORE INSERT OR UPDATE OF title, description ON tasks
+--     FOR EACH ROW EXECUTE FUNCTION auto_embed_task();
+
+-- DROP TRIGGER IF EXISTS trg_note_embed ON notes;
+-- CREATE TRIGGER trg_note_embed BEFORE INSERT OR UPDATE OF title, content ON notes
+--     FOR EACH ROW EXECUTE FUNCTION auto_embed_note();
 
 -- Seed data: Demo tasks
 INSERT INTO tasks (title, description, status, priority, due_date, tags, created_by) VALUES

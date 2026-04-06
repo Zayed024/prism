@@ -1,7 +1,6 @@
-"""Green Agent - Creative. Lateral thinking, unexpected connections."""
+"""Green Agent - Creative. Uses Google ADK LlmAgent."""
 
-from agents.base import BaseAgent
-from core.tool_manager import ToolManager
+from google.adk.agents import LlmAgent
 
 SYSTEM_PROMPT = """You are the GREEN AGENT (Creative). Your cognitive style is LATERAL and INNOVATIVE.
 
@@ -27,13 +26,10 @@ Your final response should include:
 Always explain what concrete actions you took (tasks created, notes written, emails sent, events scheduled)."""
 
 
-class GreenAgent(BaseAgent):
-    def __init__(self, tool_manager: ToolManager, model: str = "gemini-2.5-flash"):
-        super().__init__(
-            name="green",
-            color="#10B981",
-            system_prompt=SYSTEM_PROMPT,
-            tool_manager=tool_manager,
-            model=model,
-            max_iterations=5,
-        )
+def create_green_agent(tools: list, model: str = "gemini-2.5-flash") -> LlmAgent:
+    return LlmAgent(
+        name="green_agent",
+        model=model,
+        instruction=SYSTEM_PROMPT,
+        tools=tools,
+    )

@@ -1,15 +1,21 @@
-"""Orchestrator - splits request to 3 agents, runs in parallel, merges results."""
+"""Orchestrator - ADK-powered parallel agent execution with merge."""
 
 import asyncio
 import json
-import time
+import os
+import sys
 
-from agents.base import AgentResult
-from agents.red import RedAgent
-from agents.blue import BlueAgent
-from agents.green import GreenAgent
+from google.adk.agents import LlmAgent
+from google.adk.sessions import InMemorySessionService
+from google.adk.tools.mcp_tool import McpToolset
+from google.adk.tools.mcp_tool.mcp_toolset import StdioConnectionParams
+from mcp import StdioServerParameters
+
+from agents.base import AgentResult, run_adk_agent
+from agents.red import create_red_agent
+from agents.blue import create_blue_agent
+from agents.green import create_green_agent
 from core.gemini import GeminiAgent
-from core.tool_manager import ToolManager
 
 
 MERGE_PROMPT = """You are the Prism Orchestrator. Three AI agents analyzed the same user request, each with a different cognitive style. Your job is to merge the best parts of each into a single coherent response.
@@ -45,34 +51,84 @@ Respond in this JSON format:
 
 
 class Orchestrator:
-    def __init__(self, tool_manager: ToolManager, model: str = "gemini-2.5-flash"):
-        self.tool_manager = tool_manager
+    def __init__(self, model: str = "gemini-2.5-flash"):
         self.model = model
-        self.red = RedAgent(tool_manager, model=model)
-        self.blue = BlueAgent(tool_manager, model=model)
-        self.green = GreenAgent(tool_manager, model=model)
-        self.merger = GeminiAgent(model=model, system_prompt="You are an expert at synthesizing multiple perspectives into the best combined result. Always respond with valid JSON.")
+        self.session_service = InMemorySessionService()
+        self.merger = GeminiAgent(
+            model=model,
+            system_prompt="You are an expert at synthesizing multiple perspectives. Always respond with valid JSON.",
+        )
+        self._toolsets: list[McpToolset] = []
+        self._red: LlmAgent | None = None
+        self._blue: LlmAgent | None = None
+        self._green: LlmAgent | None = None
+
+    async def initialize(self, python_cmd: str, env: dict):
+        """Initialize MCP toolsets and ADK agents."""
+        # Create MCP toolsets via ADK's McpToolset
+        tasks_toolset = McpToolset(
+            connection_params=StdioConnectionParams(
+                server_params=StdioServerParameters(
+                    command=python_cmd,
+                    args=["mcp_servers/tasks_server.py"],
+                    env=env,
+                )
+            )
+        )
+        notes_toolset = McpToolset(
+            connection_params=StdioConnectionParams(
+                server_params=StdioServerParameters(
+                    command=python_cmd,
+                    args=["mcp_servers/notes_server.py"],
+                    env=env,
+                )
+            )
+        )
+        calendar_toolset = McpToolset(
+            connection_params=StdioConnectionParams(
+                server_params=StdioServerParameters(
+                    command=python_cmd,
+                    args=["mcp_servers/calendar_server.py"],
+                    env=env,
+                )
+            )
+        )
+        email_toolset = McpToolset(
+            connection_params=StdioConnectionParams(
+                server_params=StdioServerParameters(
+                    command=python_cmd,
+                    args=["mcp_servers/email_server.py"],
+                    env=env,
+                )
+            )
+        )
+
+        self._toolsets = [tasks_toolset, notes_toolset, calendar_toolset, email_toolset]
+
+        # Create ADK agents with MCP tools
+        self._red = create_red_agent(tools=list(self._toolsets), model=self.model)
+        self._blue = create_blue_agent(tools=list(self._toolsets), model=self.model)
+        self._green = create_green_agent(tools=list(self._toolsets), model=self.model)
+
+        print(f"[Prism] ADK agents initialized (model: {self.model})")
 
     async def run(self, request: str, callback=None) -> dict:
-        """
-        Run all 3 agents in parallel, then merge results.
-        callback: async function(event_dict) for SSE streaming.
-        """
+        """Run all 3 ADK agents in parallel, then merge results."""
         # Signal agent start
         if callback:
-            for agent_name, color in [("red", "#EF4444"), ("blue", "#3B82F6"), ("green", "#10B981")]:
-                await callback({"type": "agent_start", "agent": agent_name, "color": color})
+            for name, color in [("red", "#EF4444"), ("blue", "#3B82F6"), ("green", "#10B981")]:
+                await callback({"type": "agent_start", "agent": name, "color": color})
 
-        # Run agents in parallel
+        # Run ADK agents in parallel
         results: list[AgentResult] = await asyncio.gather(
-            self._run_agent(self.red, request, callback),
-            self._run_agent(self.blue, request, callback),
-            self._run_agent(self.green, request, callback),
+            self._run_agent(self._red, "red", "#EF4444", request, callback),
+            self._run_agent(self._blue, "blue", "#3B82F6", request, callback),
+            self._run_agent(self._green, "green", "#10B981", request, callback),
         )
 
         red_result, blue_result, green_result = results
 
-        # Signal agents done
+        # Emit agent_done events
         if callback:
             for result in results:
                 await callback({
@@ -106,25 +162,28 @@ class Orchestrator:
             "merged": merged,
         }
 
-    async def _run_agent(self, agent, request: str, callback=None) -> AgentResult:
-        """Run a single agent with error handling."""
+    async def _run_agent(self, agent: LlmAgent, name: str, color: str, request: str, callback=None) -> AgentResult:
+        """Run a single ADK agent with timeout."""
         try:
             return await asyncio.wait_for(
-                agent.execute(request, callback=callback),
+                run_adk_agent(
+                    agent=agent,
+                    agent_name=name,
+                    color=color,
+                    query=request,
+                    session_service=self.session_service,
+                    callback=callback,
+                ),
                 timeout=60,
             )
         except asyncio.TimeoutError:
             return AgentResult(
-                agent_name=agent.name,
-                color=agent.color,
-                response="",
+                agent_name=name, color=color, response="",
                 error="Agent timed out after 60 seconds",
             )
         except Exception as e:
             return AgentResult(
-                agent_name=agent.name,
-                color=agent.color,
-                response="",
+                agent_name=name, color=color, response="",
                 error=str(e),
             )
 
@@ -143,8 +202,7 @@ class Orchestrator:
             )
             text = GeminiAgent.extract_text(response)
 
-            # Try to parse as JSON
-            # Strip markdown code fences if present
+            # Strip markdown code fences
             clean = text.strip()
             if clean.startswith("```"):
                 clean = clean.split("\n", 1)[-1]
@@ -155,17 +213,9 @@ class Orchestrator:
             try:
                 return json.loads(clean)
             except json.JSONDecodeError:
-                return {
-                    "merged_response": text,
-                    "contributions": [],
-                    "verdict": "Could not parse structured merge result",
-                }
+                return {"merged_response": text, "contributions": [], "verdict": ""}
         except Exception as e:
-            return {
-                "merged_response": f"Merge failed: {str(e)}",
-                "contributions": [],
-                "verdict": "Error during merge",
-            }
+            return {"merged_response": f"Merge failed: {str(e)}", "contributions": [], "verdict": "Error during merge"}
 
     @staticmethod
     def _result_to_dict(result: AgentResult) -> dict:
@@ -180,3 +230,29 @@ class Orchestrator:
             "execution_time_ms": result.execution_time_ms,
             "error": result.error,
         }
+
+    @staticmethod
+    async def log_performance(db_pool, session_id: int, agents: dict, merged: dict):
+        """Log agent performance metrics to database."""
+        if not db_pool or not session_id:
+            return
+        # Determine which agents were selected based on merge contributions
+        selected_agents = set()
+        for c in merged.get("contributions", []):
+            if c.get("kept") and c["kept"] != "None":
+                selected_agents.add(c.get("agent", ""))
+
+        for name, data in agents.items():
+            try:
+                tools = [tc["tool"] for tc in data.get("tool_calls", [])]
+                await db_pool.execute(
+                    """INSERT INTO agent_performance (session_id, agent_name, was_selected, tools_used, execution_time_ms)
+                       VALUES ($1, $2, $3, $4, $5)""",
+                    session_id,
+                    name,
+                    name in selected_agents,
+                    tools,
+                    data.get("execution_time_ms", 0),
+                )
+            except Exception as e:
+                print(f"[Prism] Failed to log performance for {name}: {e}")
