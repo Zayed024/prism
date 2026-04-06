@@ -36,6 +36,7 @@
             </div>
             <nav class="flex gap-1">
                 <button onclick="showView('ask')" id="nav-ask" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium text-white bg-slate-700">Ask</button>
+                <button onclick="showView('workflows')" id="nav-workflows" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white">Workflows</button>
                 <button onclick="showView('tasks')" id="nav-tasks" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white">Tasks</button>
                 <button onclick="showView('notes')" id="nav-notes" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white">Notes</button>
                 <button onclick="showView('history')" id="nav-history" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white">History</button>
@@ -195,6 +196,27 @@
             </div>
         </div>
 
+        <!-- WORKFLOWS VIEW -->
+        <div id="view-workflows" class="hidden">
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h2 class="text-lg font-bold text-white">Multi-Step Workflows</h2>
+                    <p class="text-xs text-slate-500 mt-0.5">Pre-built workflows that chain multiple Prism queries sequentially</p>
+                </div>
+            </div>
+            <!-- Workflow Cards -->
+            <div id="workflow-cards" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6"></div>
+            <!-- Workflow Execution Area -->
+            <div id="workflow-exec" class="hidden">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 id="workflow-exec-title" class="text-sm font-bold text-white"></h3>
+                    <button onclick="cancelWorkflow()" id="workflow-cancel-btn" class="text-xs px-3 py-1 rounded-lg bg-slate-700 text-slate-400 hover:text-white">Close</button>
+                </div>
+                <!-- Workflow Step Timeline -->
+                <div id="workflow-timeline" class="space-y-3"></div>
+            </div>
+        </div>
+
         <!-- TASKS VIEW -->
         <div id="view-tasks" class="hidden">
             <div class="flex items-center justify-between mb-4">
@@ -302,6 +324,7 @@ function showView(view) {
     btn.classList.add('text-white', 'bg-slate-700');
     btn.classList.remove('text-slate-400');
     currentView = view;
+    if (view === 'workflows') loadWorkflows();
     if (view === 'tasks') loadTasks();
     if (view === 'notes') loadNotes();
     if (view === 'history') { loadHistory(); loadAgentStats(); }
@@ -500,6 +523,10 @@ function runPrism() {
         document.getElementById('merge-content').innerHTML = '<div class="shimmer-bg h-4 rounded w-3/4 mb-2"></div><div class="shimmer-bg h-4 rounded w-1/2"></div>';
     });
 
+    es.addEventListener('contrarian_start', () => {
+        document.getElementById('merge-status').innerHTML = '<span class="text-xs text-rose-400">Generating contrarian view...</span>';
+    });
+
     es.addEventListener('merge_done', (e) => {
         const data = JSON.parse(e.data);
         const result = data.result || {};
@@ -531,7 +558,37 @@ function runPrism() {
                 `<div class="mt-3 px-3 py-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-xs text-purple-300">${esc(result.verdict)}</div>`;
         }
 
+        // Contrarian view
+        if (result.contrarian_view) {
+            document.getElementById('merge-content').innerHTML +=
+                `<div class="mt-3 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300">
+                    <div class="font-semibold mb-1 text-rose-400">Contrarian View</div>
+                    ${esc(result.contrarian_view)}
+                </div>`;
+        }
+
         finish();
+    });
+
+    // Audit summary
+    es.addEventListener('audit_summary', (e) => {
+        const data = JSON.parse(e.data);
+        const a = data.audit || {};
+        const mergePanel = document.getElementById('merge-panel');
+        const auditEl = document.createElement('div');
+        auditEl.className = 'px-4 py-3 border-t border-slate-700/30';
+        auditEl.innerHTML = `
+            <div class="flex items-center justify-between text-[10px] text-slate-500">
+                <div class="flex gap-4">
+                    <span>Tokens: <strong class="text-slate-400">${(a.total_tokens || 0).toLocaleString()}</strong></span>
+                    <span>Est. cost: <strong class="text-slate-400">$${(a.total_cost_usd || 0).toFixed(4)}</strong></span>
+                    <span>Steps: <strong class="text-slate-400">${a.total_entries || 0}</strong></span>
+                    ${a.errors ? `<span class="text-red-400">Errors: ${a.errors}</span>` : ''}
+                </div>
+                <span>Model: ${a.model || 'unknown'}</span>
+            </div>
+        `;
+        mergePanel.appendChild(auditEl);
     });
 
     es.addEventListener('error', (e) => {
@@ -807,6 +864,109 @@ async function loadConnections() {
             </div>`;
         }).join('');
     } catch(e) {}
+}
+
+// ── Workflows ──
+let _workflowEs = null;
+
+async function loadWorkflows() {
+    try {
+        const res = await fetch('/api/workflows');
+        const data = await res.json();
+        const el = document.getElementById('workflow-cards');
+        const icons = {
+            sunrise: '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>',
+            chart: '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>',
+            users: '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>',
+        };
+        el.innerHTML = Object.entries(data).map(([id, w]) => `
+            <div class="glass rounded-xl p-5 hover:border-slate-600 transition cursor-pointer group" onclick="runWorkflow('${id}')">
+                <div class="flex items-center gap-3 mb-3">
+                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500/20 to-blue-500/20 border border-violet-500/30 flex items-center justify-center text-violet-400">
+                        ${icons[w.icon] || icons.chart}
+                    </div>
+                    <div>
+                        <div class="text-sm font-semibold text-white group-hover:text-violet-300 transition">${esc(w.name)}</div>
+                        <div class="text-[11px] text-slate-500">${w.steps} steps</div>
+                    </div>
+                </div>
+                <p class="text-xs text-slate-400">${esc(w.description)}</p>
+            </div>
+        `).join('');
+    } catch(e) {
+        document.getElementById('workflow-cards').innerHTML = '<div class="text-red-400 text-sm">Failed to load workflows</div>';
+    }
+}
+
+function runWorkflow(id) {
+    document.getElementById('workflow-cards').classList.add('hidden');
+    const exec = document.getElementById('workflow-exec');
+    exec.classList.remove('hidden');
+    document.getElementById('workflow-timeline').innerHTML = '';
+
+    const url = '/api/workflows/' + id + '/run';
+    _workflowEs = new EventSource(url);
+
+    _workflowEs.addEventListener('workflow_step_start', (e) => {
+        const data = JSON.parse(e.data);
+        document.getElementById('workflow-exec-title').textContent = `Running: Step ${data.step + 1}/${data.total_steps}`;
+        const timeline = document.getElementById('workflow-timeline');
+        const stepEl = document.createElement('div');
+        stepEl.id = 'wf-step-' + data.step;
+        stepEl.className = 'glass rounded-xl overflow-hidden fade-in';
+        stepEl.innerHTML = `
+            <div class="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between" style="background:rgba(139,92,246,0.08)">
+                <div class="flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-full bg-violet-500/20 border border-violet-500/40 text-violet-400 flex items-center justify-center text-xs font-bold">${data.step + 1}</span>
+                    <span class="text-sm font-medium text-violet-300">${esc(data.label)}</span>
+                </div>
+                <span class="spinner" style="border-top-color:#8b5cf6"></span>
+            </div>
+            <div class="px-4 py-2 text-xs text-slate-500">${esc(data.query)}</div>
+            <div id="wf-step-result-${data.step}" class="px-4 py-3 text-sm text-slate-300 hidden"></div>
+        `;
+        timeline.appendChild(stepEl);
+        stepEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+
+    _workflowEs.addEventListener('workflow_step_done', (e) => {
+        const data = JSON.parse(e.data);
+        const stepEl = document.getElementById('wf-step-' + data.step);
+        // Update header status
+        const header = stepEl.querySelector('div:first-child');
+        header.querySelector('span:last-child').outerHTML = '<span class="text-emerald-400 text-xs">Done</span>';
+        // Show result
+        const resultEl = document.getElementById('wf-step-result-' + data.step);
+        const merged = data.result?.merged?.merged_response || 'No result';
+        resultEl.innerHTML = formatResponse(merged);
+        resultEl.classList.remove('hidden');
+        resultEl.classList.add('fade-in');
+    });
+
+    _workflowEs.addEventListener('workflow_complete', (e) => {
+        const data = JSON.parse(e.data);
+        document.getElementById('workflow-exec-title').textContent = `${data.workflow} — Complete (${data.steps_completed} steps)`;
+        _workflowEs.close();
+        _workflowEs = null;
+        loadStats();
+    });
+
+    _workflowEs.addEventListener('workflow_error', (e) => {
+        const data = JSON.parse(e.data);
+        document.getElementById('workflow-exec-title').textContent = 'Workflow Error';
+        const timeline = document.getElementById('workflow-timeline');
+        timeline.innerHTML += `<div class="glass rounded-lg px-4 py-3 text-red-400 text-sm">${esc(data.message)}</div>`;
+        _workflowEs.close();
+        _workflowEs = null;
+    });
+
+    _workflowEs.onerror = () => { if (_workflowEs) { _workflowEs.close(); _workflowEs = null; } };
+}
+
+function cancelWorkflow() {
+    if (_workflowEs) { _workflowEs.close(); _workflowEs = null; }
+    document.getElementById('workflow-exec').classList.add('hidden');
+    document.getElementById('workflow-cards').classList.remove('hidden');
 }
 
 // ── Init ──

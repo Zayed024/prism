@@ -17,6 +17,7 @@ from agents.base import AgentResult, run_adk_agent
 from agents.red import create_red_agent
 from agents.blue import create_blue_agent
 from agents.green import create_green_agent
+from core.audit import PrismAudit
 from core.gemini import GeminiAgent
 
 
@@ -78,6 +79,14 @@ Respond in this JSON format:
     "conflicts_resolved": "Any disagreements between agents and how they were resolved",
     "verdict": "One sentence: which agent performed best and why"
 }}"""
+
+
+CONTRARIAN_PROMPT = """You are a critical thinking advisor. Given this merged action plan, provide a brief contrarian perspective — what could go WRONG, what assumptions might be flawed, or what alternative approach was overlooked.
+
+## Merged Result
+{merged_response}
+
+Respond in 2-3 sentences. Be specific and constructive, not generically negative. Start with "Consider this:" """
 
 
 class Orchestrator:
@@ -146,15 +155,20 @@ class Orchestrator:
         print(f"[Prism] ADK agents initialized (model: {self.model})")
 
     async def run(self, request: str, callback=None) -> dict:
-        """Full Prism pipeline: context → agents → negotiation → merge."""
+        """Full Prism pipeline: context → agents → negotiation → merge → contrarian."""
         now = datetime.now()
         tomorrow = now + timedelta(days=1)
+        audit = PrismAudit(model=self.model)
 
         # ── Phase 1: Smart Context (AlloyDB AI) ──────────────
         if callback:
             await callback({"type": "context_gathering", "message": "Searching for relevant context via AlloyDB AI..."})
 
+        import time as _time
+        ctx_start = _time.time()
         smart_context = await self._gather_context(request)
+        audit.log("context", "orchestrator", "semantic_search", f"Found context: {smart_context[:100]}",
+                  input_text=request, output_text=smart_context, latency_ms=int((_time.time()-ctx_start)*1000))
 
         if callback:
             await callback({"type": "context_done", "context": smart_context})
@@ -170,14 +184,11 @@ class Orchestrator:
             for name, color in [("red", "#EF4444"), ("blue", "#3B82F6"), ("green", "#10B981")]:
                 await callback({"type": "agent_start", "agent": name, "color": color})
 
-        # Stagger agent launches slightly to reduce rate limit pressure
         async def launch_red():
             return await self._run_agent(self._red, "red", "#EF4444", enriched, callback)
-
         async def launch_blue():
             await asyncio.sleep(0.5)
             return await self._run_agent(self._blue, "blue", "#3B82F6", enriched, callback)
-
         async def launch_green():
             await asyncio.sleep(1.0)
             return await self._run_agent(self._green, "green", "#10B981", enriched, callback)
@@ -187,6 +198,15 @@ class Orchestrator:
         )
         red_result, blue_result, green_result = results
 
+        for result in results:
+            audit.log("agent", result.agent_name, "llm_generate",
+                      f"Response: {result.response[:80]}", input_text=enriched,
+                      output_text=result.response, latency_ms=result.execution_time_ms,
+                      status="error" if result.error else "success")
+            for tc in result.tool_calls:
+                audit.log("agent", result.agent_name, "tool_call",
+                          f"{tc.tool_name}({json.dumps(tc.args)[:60]})")
+
         if callback:
             for result in results:
                 await callback({
@@ -194,10 +214,7 @@ class Orchestrator:
                     "agent": result.agent_name,
                     "color": result.color,
                     "response": result.response,
-                    "tool_calls": [
-                        {"tool": tc.tool_name, "args": tc.args}
-                        for tc in result.tool_calls
-                    ],
+                    "tool_calls": [{"tool": tc.tool_name, "args": tc.args} for tc in result.tool_calls],
                     "execution_time_ms": result.execution_time_ms,
                     "error": result.error,
                 })
@@ -208,7 +225,11 @@ class Orchestrator:
         if callback:
             await callback({"type": "negotiation_start", "message": "Agents reviewing each other's work..."})
 
+        neg_start = _time.time()
         negotiations = await self._negotiate(request, red_result, blue_result, green_result)
+        audit.log("negotiation", "orchestrator", "llm_generate", "3 agents exchanged feedback",
+                  input_text=request, output_text=json.dumps(negotiations)[:200],
+                  latency_ms=int((_time.time()-neg_start)*1000))
 
         if callback:
             await callback({"type": "negotiation_done", "negotiations": negotiations})
@@ -219,10 +240,37 @@ class Orchestrator:
         if callback:
             await callback({"type": "merge_start"})
 
+        merge_start = _time.time()
         merged = await self._merge(request, smart_context, red_result, blue_result, green_result, negotiations)
+        audit.log("merge", "orchestrator", "llm_generate", f"Merged: {merged.get('merged_response', '')[:80]}",
+                  input_text=request, output_text=json.dumps(merged)[:300],
+                  latency_ms=int((_time.time()-merge_start)*1000))
+
+        # ── Phase 5: Contrarian View ─────────────────────────
+        contrarian = ""
+        merged_text = merged.get("merged_response", "")
+        if merged_text and not merged_text.startswith("Merge failed"):
+            try:
+                await asyncio.sleep(1)
+                if callback:
+                    await callback({"type": "contrarian_start"})
+                ct_start = _time.time()
+                prompt = CONTRARIAN_PROMPT.format(merged_response=merged_text[:800])
+                response = await self.merger.generate([{"role": "user", "parts": [prompt]}])
+                contrarian = GeminiAgent.extract_text(response)
+                audit.log("contrarian", "orchestrator", "llm_generate", f"Contrarian: {contrarian[:80]}",
+                          input_text=prompt, output_text=contrarian,
+                          latency_ms=int((_time.time()-ct_start)*1000))
+            except Exception as e:
+                contrarian = ""
+                audit.log("contrarian", "orchestrator", "llm_generate", f"Skipped: {str(e)[:80]}",
+                          status="skipped")
+
+        merged["contrarian_view"] = contrarian
 
         if callback:
             await callback({"type": "merge_done", "result": merged})
+            await callback({"type": "audit_summary", "audit": audit.summary(), "entries": audit.to_list()})
 
         return {
             "agents": {
@@ -233,6 +281,7 @@ class Orchestrator:
             "negotiations": negotiations,
             "smart_context": smart_context,
             "merged": merged,
+            "audit": audit.summary(),
         }
 
     async def _gather_context(self, request: str) -> str:

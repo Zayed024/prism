@@ -78,7 +78,12 @@ async def lifespan(app: FastAPI):
     print("[Prism] Shutdown complete")
 
 
-app = FastAPI(title="Prism", version="1.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="Prism",
+    version="1.0.0",
+    description="Multi-Agent Productivity Assistant — 3 AI agents with different cognitive styles collaborate via MCP tools, negotiate, and merge results. Built with Google ADK, Gemini 2.5 Flash, AlloyDB AI, and MCP.",
+    lifespan=lifespan,
+)
 templates = Jinja2Templates(directory="templates")
 
 app.add_middleware(
@@ -94,6 +99,123 @@ app.add_middleware(
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+# ── Pre-built Workflows ──────────────────────────────────────
+
+WORKFLOWS = {
+    "morning_briefing": {
+        "name": "Morning Briefing",
+        "description": "Check emails, review overdue tasks, scan calendar, get an action plan",
+        "icon": "sunrise",
+        "steps": [
+            {"label": "Scan inbox", "query": "Check my unread emails and summarize anything that needs attention today"},
+            {"label": "Review overdue", "query": "What tasks are overdue or due today? List them by priority"},
+            {"label": "Check calendar", "query": "What's on my calendar today? Flag any conflicts or tight scheduling"},
+            {"label": "Action plan", "query": "Based on my emails, tasks, and calendar, create a prioritized action plan for today. Flag anything that violates human performance limits."},
+        ],
+    },
+    "weekly_review": {
+        "name": "Weekly Review",
+        "description": "Summarize the week, identify patterns, plan next week",
+        "icon": "chart",
+        "steps": [
+            {"label": "Task status", "query": "List all tasks grouped by status (done, in_progress, todo). How many were completed vs created this week?"},
+            {"label": "Find patterns", "query": "Search my notes and tasks for recurring themes or blockers. What keeps coming up?"},
+            {"label": "Plan next week", "query": "Based on my current tasks, notes, and calendar, suggest a focus plan for next week with the top 3 priorities"},
+        ],
+    },
+    "meeting_prep": {
+        "name": "Meeting Prep",
+        "description": "Gather context, check related tasks, draft an agenda",
+        "icon": "users",
+        "steps": [
+            {"label": "Find context", "query": "Search my notes and emails for anything related to upcoming client meetings or presentations"},
+            {"label": "Check tasks", "query": "What tasks are related to client work or presentations? What's their status?"},
+            {"label": "Draft agenda", "query": "Based on the context and tasks, create a meeting agenda note with key discussion points and action items to review"},
+        ],
+    },
+}
+
+
+@app.get("/api/workflows")
+async def list_workflows():
+    """List available pre-built workflows."""
+    return {k: {"name": v["name"], "description": v["description"], "icon": v["icon"], "steps": len(v["steps"])} for k, v in WORKFLOWS.items()}
+
+
+@app.get("/api/workflows/{workflow_id}/run")
+async def run_workflow(workflow_id: str):
+    """Run a multi-step workflow via SSE — chains Prism queries sequentially."""
+    if workflow_id not in WORKFLOWS:
+        return {"error": f"Workflow '{workflow_id}' not found"}
+
+    workflow = WORKFLOWS[workflow_id]
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def run_steps():
+        try:
+            step_results = []
+            for i, step in enumerate(workflow["steps"]):
+                await queue.put({
+                    "type": "workflow_step_start",
+                    "step": i,
+                    "label": step["label"],
+                    "query": step["query"],
+                    "total_steps": len(workflow["steps"]),
+                })
+
+                # Build enriched query with previous step context
+                enriched_query = step["query"]
+                if step_results:
+                    prev_context = "\n".join(
+                        f"[Previous step '{s['label']}']: {s['summary'][:300]}"
+                        for s in step_results
+                    )
+                    enriched_query = f"Context from previous steps:\n{prev_context}\n\nCurrent task: {step['query']}"
+
+                # Run Prism for this step
+                result = await _orchestrator.run(enriched_query)
+                merged = result.get("merged", {})
+                summary = merged.get("merged_response", "No result")
+
+                step_results.append({"label": step["label"], "summary": summary})
+
+                await queue.put({
+                    "type": "workflow_step_done",
+                    "step": i,
+                    "label": step["label"],
+                    "result": {
+                        "agents": result.get("agents", {}),
+                        "merged": merged,
+                    },
+                })
+
+                # Brief pause between steps
+                if i < len(workflow["steps"]) - 1:
+                    await asyncio.sleep(2)
+
+            await queue.put({
+                "type": "workflow_complete",
+                "workflow": workflow["name"],
+                "steps_completed": len(step_results),
+                "results": step_results,
+            })
+        except Exception as e:
+            await queue.put({"type": "workflow_error", "message": str(e)})
+        finally:
+            await queue.put(None)
+
+    async def event_generator():
+        task = asyncio.create_task(run_steps())
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            yield {"event": event["type"], "data": json.dumps(event)}
+        await task
+
+    return EventSourceResponse(event_generator())
 
 
 # ── Main Prism Endpoint (SSE) ─────────────────────────────────
