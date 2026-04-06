@@ -52,3 +52,25 @@ class NoteOut(BaseModel):
     linked_task_id: Optional[int] = None
     created_by: str
     created_at: str
+
+
+class CreateTaskRequest(BaseModel):
+    title: str
+    description: str = ""
+    priority: str = "medium"
+    due_date: Optional[str] = None
+    tags: str = ""
+
+
+class CreateNoteRequest(BaseModel):
+    title: str
+    content: str = ""
+    tags: str = ""
+    linked_task_id: Optional[int] = None
+
+
+class UpdateTaskRequest(BaseModel):
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None

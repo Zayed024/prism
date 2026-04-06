@@ -19,7 +19,7 @@ from fastapi.templating import Jinja2Templates
 from sse_starlette.sse import EventSourceResponse
 
 from core.mcp_client import MCPClient
-from models import PrismRequest
+from models import PrismRequest, CreateTaskRequest, CreateNoteRequest, UpdateTaskRequest
 from orchestrator import Orchestrator
 
 load_dotenv()
@@ -192,6 +192,38 @@ async def get_tasks(status: str = "", priority: str = ""):
     return []
 
 
+@app.post("/api/tasks")
+async def create_task(req: CreateTaskRequest):
+    args = {"title": req.title, "description": req.description, "priority": req.priority, "tags": req.tags}
+    if req.due_date:
+        args["due_date"] = req.due_date
+    result = await _mcp_clients["tasks"].call_tool("create_task", args)
+    if result and result.content:
+        return json.loads(result.content[0].text)
+    return {"error": "Failed to create task"}
+
+
+@app.patch("/api/tasks/{task_id}")
+async def update_task(task_id: int, req: UpdateTaskRequest):
+    args = {"task_id": task_id}
+    if req.status: args["status"] = req.status
+    if req.priority: args["priority"] = req.priority
+    if req.title: args["title"] = req.title
+    if req.description: args["description"] = req.description
+    result = await _mcp_clients["tasks"].call_tool("update_task", args)
+    if result and result.content:
+        return json.loads(result.content[0].text)
+    return {"error": "Failed to update task"}
+
+
+@app.delete("/api/tasks/{task_id}")
+async def delete_task(task_id: int):
+    result = await _mcp_clients["tasks"].call_tool("delete_task", {"task_id": task_id})
+    if result and result.content:
+        return json.loads(result.content[0].text)
+    return {"error": "Failed to delete task"}
+
+
 @app.get("/api/notes")
 async def get_notes():
     if _db_pool:
@@ -201,6 +233,17 @@ async def get_notes():
     if result and result.content:
         return json.loads(result.content[0].text)
     return []
+
+
+@app.post("/api/notes")
+async def create_note(req: CreateNoteRequest):
+    args = {"title": req.title, "content": req.content, "tags": req.tags}
+    if req.linked_task_id:
+        args["linked_task_id"] = req.linked_task_id
+    result = await _mcp_clients["notes"].call_tool("create_note", args)
+    if result and result.content:
+        return json.loads(result.content[0].text)
+    return {"error": "Failed to create note"}
 
 
 @app.get("/api/history")
@@ -229,6 +272,18 @@ async def get_stats():
         return {"tasks": tc, "notes": nc, "sessions": 0}
     except Exception:
         return {"tasks": 0, "notes": 0, "sessions": 0}
+
+
+@app.get("/api/connections")
+async def get_connections():
+    """Show which data sources are live vs demo."""
+    db_connected = _db_pool is not None
+    return {
+        "tasks": {"status": "live", "backend": "AlloyDB"} if db_connected else {"status": "demo", "backend": "In-memory mock"},
+        "notes": {"status": "live", "backend": "AlloyDB"} if db_connected else {"status": "demo", "backend": "In-memory mock"},
+        "calendar": {"status": "demo", "backend": "Mock data (Google Calendar ready)"},
+        "email": {"status": "demo", "backend": "Mock data (Gmail ready)"},
+    }
 
 
 @app.get("/api/agent-stats")

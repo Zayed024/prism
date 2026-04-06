@@ -47,8 +47,8 @@
 
         <!-- ASK VIEW -->
         <div id="view-ask">
-            <!-- Stats banner -->
-            <div class="flex gap-4 mb-6">
+            <!-- Stats + Connection Status banner -->
+            <div class="flex gap-4 mb-4 flex-wrap">
                 <div class="glass rounded-lg px-4 py-2 flex items-center gap-2">
                     <span class="text-slate-400 text-sm">Tasks</span>
                     <span id="stat-tasks" class="text-white font-bold">-</span>
@@ -62,6 +62,8 @@
                     <span id="stat-sessions" class="text-white font-bold">-</span>
                 </div>
             </div>
+            <!-- Data Sources -->
+            <div id="connections-bar" class="flex gap-2 mb-6 flex-wrap"></div>
 
             <!-- Input section -->
             <div class="glass rounded-xl p-6 mb-6">
@@ -152,6 +154,7 @@
             <div class="flex items-center justify-between mb-4">
                 <h2 class="text-lg font-bold text-white">Tasks</h2>
                 <div class="flex gap-2">
+                    <button onclick="toggleAddTask()" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition">+ Add Task</button>
                     <select id="task-filter-status" onchange="loadTasks()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-300">
                         <option value="">All Status</option>
                         <option value="todo">Todo</option>
@@ -166,17 +169,57 @@
                     </select>
                 </div>
             </div>
+            <!-- Add Task Form -->
+            <div id="add-task-form" class="hidden glass rounded-xl p-4 mb-4 fade-in">
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <input id="new-task-title" type="text" placeholder="Task title *" class="col-span-2 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                    <input id="new-task-desc" type="text" placeholder="Description" class="col-span-2 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                    <select id="new-task-priority" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300">
+                        <option value="medium">Medium priority</option>
+                        <option value="high">High priority</option>
+                        <option value="low">Low priority</option>
+                    </select>
+                    <input id="new-task-due" type="date" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300">
+                    <input id="new-task-tags" type="text" placeholder="Tags (comma-separated)" class="col-span-2 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                </div>
+                <div class="flex gap-2 justify-end">
+                    <button onclick="toggleAddTask()" class="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white">Cancel</button>
+                    <button onclick="submitTask()" class="px-4 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700">Create</button>
+                </div>
+            </div>
             <div id="tasks-list" class="space-y-2"></div>
         </div>
 
         <!-- NOTES VIEW -->
         <div id="view-notes" class="hidden">
-            <h2 class="text-lg font-bold text-white mb-4">Notes</h2>
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-bold text-white">Notes</h2>
+                <button onclick="toggleAddNote()" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition">+ Add Note</button>
+            </div>
+            <!-- Add Note Form -->
+            <div id="add-note-form" class="hidden glass rounded-xl p-4 mb-4 fade-in">
+                <div class="space-y-3 mb-3">
+                    <input id="new-note-title" type="text" placeholder="Note title *" class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+                    <textarea id="new-note-content" rows="4" placeholder="Content (supports markdown)" class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-y"></textarea>
+                    <input id="new-note-tags" type="text" placeholder="Tags (comma-separated)" class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
+                </div>
+                <div class="flex gap-2 justify-end">
+                    <button onclick="toggleAddNote()" class="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white">Cancel</button>
+                    <button onclick="submitNote()" class="px-4 py-1.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700">Create</button>
+                </div>
+            </div>
             <div id="notes-list" class="space-y-3"></div>
         </div>
 
         <!-- HISTORY VIEW -->
         <div id="view-history" class="hidden">
+            <!-- Agent Performance Chart -->
+            <div id="perf-section" class="glass rounded-xl p-5 mb-6">
+                <h3 class="text-sm font-semibold text-white mb-4">Agent Performance</h3>
+                <div id="perf-chart" class="flex gap-6 items-end justify-center h-48"></div>
+                <div id="perf-legend" class="flex gap-6 justify-center mt-4 text-xs text-slate-400"></div>
+                <div id="perf-empty" class="hidden text-center text-sm text-slate-500 py-8">Run a few Prism queries to see agent performance data here.</div>
+            </div>
             <h2 class="text-lg font-bold text-white mb-4">Session History</h2>
             <div id="history-list" class="space-y-3"></div>
         </div>
@@ -205,7 +248,7 @@ function showView(view) {
     currentView = view;
     if (view === 'tasks') loadTasks();
     if (view === 'notes') loadNotes();
-    if (view === 'history') loadHistory();
+    if (view === 'history') { loadHistory(); loadAgentStats(); }
 }
 
 function setQuery(q) {
@@ -349,6 +392,68 @@ function runPrism() {
     }
 }
 
+// ── Add Task/Note Forms ──
+function toggleAddTask() { document.getElementById('add-task-form').classList.toggle('hidden'); }
+function toggleAddNote() { document.getElementById('add-note-form').classList.toggle('hidden'); }
+
+async function submitTask() {
+    const title = document.getElementById('new-task-title').value.trim();
+    if (!title) return;
+    const body = {
+        title,
+        description: document.getElementById('new-task-desc').value,
+        priority: document.getElementById('new-task-priority').value,
+        due_date: document.getElementById('new-task-due').value ? document.getElementById('new-task-due').value + 'T17:00:00' : '',
+        tags: document.getElementById('new-task-tags').value,
+    };
+    try {
+        await fetch('/api/tasks', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        toggleAddTask();
+        document.getElementById('new-task-title').value = '';
+        document.getElementById('new-task-desc').value = '';
+        document.getElementById('new-task-tags').value = '';
+        document.getElementById('new-task-due').value = '';
+        loadTasks();
+        loadStats();
+    } catch(e) { alert('Failed to create task'); }
+}
+
+async function submitNote() {
+    const title = document.getElementById('new-note-title').value.trim();
+    if (!title) return;
+    const body = {
+        title,
+        content: document.getElementById('new-note-content').value,
+        tags: document.getElementById('new-note-tags').value,
+    };
+    try {
+        await fetch('/api/notes', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+        toggleAddNote();
+        document.getElementById('new-note-title').value = '';
+        document.getElementById('new-note-content').value = '';
+        document.getElementById('new-note-tags').value = '';
+        loadNotes();
+        loadStats();
+    } catch(e) { alert('Failed to create note'); }
+}
+
+async function cycleTaskStatus(id, current) {
+    const next = { todo: 'in_progress', in_progress: 'done', done: 'todo' };
+    try {
+        await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ status: next[current] || 'todo' }) });
+        loadTasks();
+    } catch(e) {}
+}
+
+async function deleteTask(id) {
+    if (!confirm('Delete this task?')) return;
+    try {
+        await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+        loadTasks();
+        loadStats();
+    } catch(e) {}
+}
+
 // ── Tasks View ──
 async function loadTasks() {
     const status = document.getElementById('task-filter-status').value;
@@ -367,11 +472,11 @@ async function loadTasks() {
         el.innerHTML = tasks.map(t => {
             const statusColors = { todo: 'bg-slate-600', in_progress: 'bg-amber-600', done: 'bg-emerald-600' };
             const prioColors = { high: 'text-red-400', medium: 'text-amber-400', low: 'text-slate-400' };
-            return `<div class="glass rounded-lg px-4 py-3 flex items-center justify-between">
+            return `<div class="glass rounded-lg px-4 py-3 flex items-center justify-between group">
                 <div class="flex items-center gap-3">
-                    <span class="text-xs px-2 py-0.5 rounded ${statusColors[t.status] || 'bg-slate-600'} text-white">${t.status}</span>
+                    <button onclick="cycleTaskStatus(${t.id},'${t.status}')" title="Click to change status" class="text-xs px-2 py-0.5 rounded ${statusColors[t.status] || 'bg-slate-600'} text-white hover:opacity-80 transition cursor-pointer">${t.status}</button>
                     <div>
-                        <div class="text-sm text-white font-medium">${esc(t.title)}</div>
+                        <div class="text-sm text-white font-medium ${t.status === 'done' ? 'line-through opacity-60' : ''}">${esc(t.title)}</div>
                         <div class="text-xs text-slate-500">${t.description ? esc(t.description.slice(0, 80)) : ''}</div>
                     </div>
                 </div>
@@ -380,6 +485,9 @@ async function loadTasks() {
                     <span class="${prioColors[t.priority] || ''}">${t.priority}</span>
                     ${t.due_date ? `<span class="text-slate-500">${new Date(t.due_date).toLocaleDateString()}</span>` : ''}
                     <span class="text-slate-600 text-[10px]">${t.created_by}</span>
+                    <button onclick="deleteTask(${t.id})" class="text-slate-700 hover:text-red-400 transition opacity-0 group-hover:opacity-100" title="Delete">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    </button>
                 </div>
             </div>`;
         }).join('');
@@ -404,9 +512,10 @@ async function loadNotes() {
                 <div class="flex items-center gap-2">
                     ${n.linked_task_id ? `<span class="text-xs px-2 py-0.5 rounded bg-blue-900/50 text-blue-300">Task #${n.linked_task_id}</span>` : ''}
                     ${n.tags?.map(tag => `<span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400">${esc(tag)}</span>`).join('') || ''}
+                    <span class="text-slate-600 text-[10px]">${n.created_by}</span>
                 </div>
             </div>
-            <pre class="text-xs text-slate-400 whitespace-pre-wrap font-sans">${esc(n.content?.slice(0, 300) || '')}${n.content?.length > 300 ? '...' : ''}</pre>
+            <pre class="text-xs text-slate-400 whitespace-pre-wrap font-sans">${esc(n.content?.slice(0, 400) || '')}${n.content?.length > 400 ? '...' : ''}</pre>
         </div>`).join('');
     } catch(e) {
         document.getElementById('notes-list').innerHTML = '<div class="text-red-400 text-sm">Failed to load notes</div>';
@@ -460,8 +569,79 @@ function formatResponse(text) {
     }).join('');
 }
 
+// ── Agent Performance Chart ──
+async function loadAgentStats() {
+    try {
+        const res = await fetch('/api/agent-stats');
+        const data = await res.json();
+        const chartEl = document.getElementById('perf-chart');
+        const legendEl = document.getElementById('perf-legend');
+        const emptyEl = document.getElementById('perf-empty');
+
+        const agents = [
+            { key: 'red', label: 'Red (Speed)', color: '#EF4444', bg: 'rgba(239,68,68,0.2)', border: 'rgba(239,68,68,0.5)' },
+            { key: 'blue', label: 'Blue (Depth)', color: '#3B82F6', bg: 'rgba(59,130,246,0.2)', border: 'rgba(59,130,246,0.5)' },
+            { key: 'green', label: 'Green (Creative)', color: '#10B981', bg: 'rgba(16,185,129,0.2)', border: 'rgba(16,185,129,0.5)' },
+        ];
+
+        const hasData = agents.some(a => (data[a.key]?.total || 0) > 0);
+        if (!hasData) {
+            chartEl.classList.add('hidden');
+            legendEl.classList.add('hidden');
+            emptyEl.classList.remove('hidden');
+            return;
+        }
+        chartEl.classList.remove('hidden');
+        legendEl.classList.remove('hidden');
+        emptyEl.classList.add('hidden');
+
+        const maxTotal = Math.max(...agents.map(a => data[a.key]?.total || 0), 1);
+
+        chartEl.innerHTML = agents.map(a => {
+            const d = data[a.key] || { selected: 0, total: 0, avg_time_ms: 0, win_rate: 0 };
+            const totalH = Math.max((d.total / maxTotal) * 100, 8);
+            const selH = d.total > 0 ? Math.max((d.selected / maxTotal) * 100, 4) : 0;
+            return `<div class="flex flex-col items-center gap-2 flex-1">
+                <div class="text-xs font-bold" style="color:${a.color}">${d.win_rate || 0}%</div>
+                <div class="w-full flex flex-col items-center justify-end" style="height:160px">
+                    <div class="relative w-full max-w-[60px] rounded-t-lg overflow-hidden" style="height:${totalH}%;background:${a.bg};border:1px solid ${a.border}">
+                        <div class="absolute bottom-0 left-0 right-0 rounded-t-sm" style="height:${selH / totalH * 100}%;background:${a.color};opacity:0.7"></div>
+                    </div>
+                </div>
+                <div class="text-[11px] font-medium" style="color:${a.color}">${a.label.split(' ')[0]}</div>
+                <div class="text-[10px] text-slate-500">${d.selected}/${d.total} wins</div>
+                <div class="text-[10px] text-slate-600">${d.avg_time_ms ? (d.avg_time_ms/1000).toFixed(1)+'s avg' : ''}</div>
+            </div>`;
+        }).join('');
+
+        legendEl.innerHTML = `<div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded-sm" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2)"></div> Total sessions</div>
+            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded-sm" style="background:rgba(255,255,255,0.4)"></div> Selected by orchestrator</div>`;
+
+    } catch(e) { console.error('Failed to load agent stats', e); }
+}
+
+// ── Connections ──
+async function loadConnections() {
+    try {
+        const res = await fetch('/api/connections');
+        const data = await res.json();
+        const el = document.getElementById('connections-bar');
+        const icons = { tasks: 'T', notes: 'N', calendar: 'C', email: 'E' };
+        const labels = { tasks: 'Tasks', notes: 'Notes', calendar: 'Calendar', email: 'Email' };
+        el.innerHTML = Object.entries(data).map(([key, info]) => {
+            const live = info.status === 'live';
+            return `<div class="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] ${live ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-amber-500/10 border border-amber-500/30 text-amber-400'}">
+                <span class="w-1.5 h-1.5 rounded-full ${live ? 'bg-emerald-400' : 'bg-amber-400'}"></span>
+                <span class="font-medium">${labels[key]}</span>
+                <span class="text-slate-500">${info.backend}</span>
+            </div>`;
+        }).join('');
+    } catch(e) {}
+}
+
 // ── Init ──
 loadStats();
+loadConnections();
 </script>
 </body>
 </html>
