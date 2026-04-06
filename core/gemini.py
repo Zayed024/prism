@@ -1,67 +1,80 @@
-"""Gemini wrapper with function calling support for the agentic tool loop."""
+"""Gemini wrapper — supports both API key and Vertex AI (via google.genai)."""
 
 import asyncio
 import os
 
-from google import generativeai as genai
-from google.generativeai import protos
+from google import genai
+from google.genai import types
 
 
-_configured = False
+_client = None
 
 
-def _ensure_configured():
-    global _configured
-    if not _configured:
-        api_key = os.getenv("GEMINI_API_KEY", "")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is required")
-        genai.configure(api_key=api_key)
-        _configured = True
+def _get_client() -> genai.Client:
+    global _client
+    if _client is None:
+        # If GOOGLE_GENAI_USE_VERTEXAI is set, uses Vertex AI (no API key needed)
+        # Otherwise falls back to API key
+        if os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "").upper() == "TRUE":
+            _client = genai.Client(
+                vertexai=True,
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", ""),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
+            )
+        else:
+            api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", "")
+            if not api_key:
+                raise ValueError("GEMINI_API_KEY or GOOGLE_API_KEY is required (or set GOOGLE_GENAI_USE_VERTEXAI=TRUE)")
+            _client = genai.Client(api_key=api_key)
+    return _client
 
 
 class GeminiAgent:
-    """A Gemini-powered agent that supports function calling."""
+    """A Gemini-powered agent using google.genai (supports Vertex AI)."""
 
     def __init__(self, model: str = "gemini-2.5-flash", system_prompt: str = ""):
-        _ensure_configured()
+        self.client = _get_client()
         self.model_name = model
         self.system_prompt = system_prompt
-        self.model = genai.GenerativeModel(
-            model_name=model,
-            system_instruction=system_prompt if system_prompt else None,
-        )
 
-    async def generate(self, contents: list, tools=None, max_retries: int = 3) -> protos.GenerateContentResponse:
+    async def generate(self, contents: list, tools=None, max_retries: int = 3):
         """Call Gemini with contents and optional tools. Retries on rate limit."""
-        kwargs = {"contents": contents}
-        if tools:
-            kwargs["tools"] = tools
+        # Convert our simple format to genai Content objects
+        genai_contents = []
+        for item in contents:
+            if isinstance(item, dict):
+                role = item.get("role", "user")
+                parts_raw = item.get("parts", [])
+                parts = []
+                for p in parts_raw:
+                    if isinstance(p, str):
+                        parts.append(types.Part(text=p))
+                    else:
+                        parts.append(p)
+                genai_contents.append(types.Content(role=role, parts=parts))
+            else:
+                genai_contents.append(item)
+
+        config = types.GenerateContentConfig(
+            system_instruction=self.system_prompt if self.system_prompt else None,
+        )
 
         for attempt in range(max_retries):
             try:
                 response = await asyncio.to_thread(
-                    self.model.generate_content, **kwargs
+                    self.client.models.generate_content,
+                    model=self.model_name,
+                    contents=genai_contents,
+                    config=config,
                 )
                 return response
             except Exception as e:
                 if "429" in str(e) and attempt < max_retries - 1:
-                    wait = 2 ** (attempt + 1)  # 2, 4, 8 seconds
+                    wait = 2 ** (attempt + 1)
                     print(f"[Gemini] Rate limited, retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
                     await asyncio.sleep(wait)
                 else:
                     raise
-
-    @staticmethod
-    def extract_function_calls(response) -> list:
-        """Extract function calls from a Gemini response."""
-        calls = []
-        if not response.candidates:
-            return calls
-        for part in response.candidates[0].content.parts:
-            if part.function_call and part.function_call.name:
-                calls.append(part.function_call)
-        return calls
 
     @staticmethod
     def extract_text(response) -> str:
@@ -70,16 +83,6 @@ class GeminiAgent:
             return ""
         texts = []
         for part in response.candidates[0].content.parts:
-            if part.text:
+            if hasattr(part, "text") and part.text:
                 texts.append(part.text)
         return "\n".join(texts)
-
-    @staticmethod
-    def build_function_response(name: str, result: dict) -> protos.Part:
-        """Build a FunctionResponse Part to send back to Gemini."""
-        return protos.Part(
-            function_response=protos.FunctionResponse(
-                name=name,
-                response=result,
-            )
-        )
