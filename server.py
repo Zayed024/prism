@@ -56,6 +56,9 @@ async def lifespan(app: FastAPI):
     )
     print("[Prism] REST MCP clients connected")
 
+    # Share MCP clients with orchestrator for smart context (AlloyDB AI semantic search)
+    _orchestrator._mcp_clients = _mcp_clients
+
     # Direct DB pool for REST endpoints
     if database_url:
         try:

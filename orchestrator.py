@@ -1,4 +1,5 @@
-"""Orchestrator - ADK-powered parallel agent execution with merge."""
+"""Orchestrator - ADK-powered parallel agent execution with smart context,
+agent negotiation, and merge. The core of the Prism multi-agent system."""
 
 import asyncio
 import json
@@ -19,35 +20,63 @@ from agents.green import create_green_agent
 from core.gemini import GeminiAgent
 
 
-MERGE_PROMPT = """You are the Prism Orchestrator. Three AI agents analyzed the same user request, each with a different cognitive style. Your job is to merge the best parts of each into a single coherent response.
+# ── Prompts ───────────────────────────────────────────────────
+
+NEGOTIATION_PROMPT = """You are the {agent_name} agent ({agent_style}). You just completed a task and now see what the other two agents did.
+
+## Original Request
+{request}
+
+## Your Response
+{own_response}
+
+## Other Agent Responses
+{other_responses}
+
+In 2-3 sentences, respond with:
+1. One thing another agent did BETTER than you (give credit)
+2. One thing YOU did that the others missed
+3. One specific suggestion to IMPROVE the final merged result
+
+Be concise and direct. No fluff."""
+
+
+MERGE_PROMPT = """You are the Prism Orchestrator. Three AI agents analyzed the same user request with different cognitive styles. After their initial work, they reviewed each other's output and provided feedback in a negotiation round.
 
 ## User's Original Request
 {request}
 
-## RED AGENT (Speed-focused, quick action)
-{red_response}
+## Relevant Context (from AlloyDB AI semantic search)
+{smart_context}
 
-## BLUE AGENT (Depth-focused, thorough analysis)
-{blue_response}
+## RED AGENT (Speed-focused)
+Response: {red_response}
+Negotiation feedback: {red_negotiation}
 
-## GREEN AGENT (Creative, lateral thinking)
-{green_response}
+## BLUE AGENT (Depth-focused)
+Response: {blue_response}
+Negotiation feedback: {blue_negotiation}
+
+## GREEN AGENT (Creative)
+Response: {green_response}
+Negotiation feedback: {green_negotiation}
 
 ## Your Task
-1. Identify the BEST contributions from each agent
-2. Merge them into a single, coherent action plan
-3. Note which agent contributed what (for transparency)
-4. If agents took conflicting actions, explain which you'd keep and why
+1. Consider BOTH the agent responses AND their negotiation feedback
+2. Merge the best parts into a single coherent result
+3. Note which agent contributed what
+4. Highlight any conflicts that were resolved through negotiation
 
 Respond in this JSON format:
 {{
-    "merged_response": "Your merged summary here - what was done and what's recommended",
+    "merged_response": "Your merged summary — what was done and recommended",
     "contributions": [
         {{"agent": "red", "kept": "what you kept from red", "reason": "why"}},
         {{"agent": "blue", "kept": "what you kept from blue", "reason": "why"}},
         {{"agent": "green", "kept": "what you kept from green", "reason": "why"}}
     ],
-    "verdict": "One sentence: which agent performed best for this specific request and why"
+    "conflicts_resolved": "Any disagreements between agents and how they were resolved",
+    "verdict": "One sentence: which agent performed best and why"
 }}"""
 
 
@@ -57,16 +86,20 @@ class Orchestrator:
         self.session_service = InMemorySessionService()
         self.merger = GeminiAgent(
             model=model,
-            system_prompt="You are an expert at synthesizing multiple perspectives. Always respond with valid JSON.",
+            system_prompt="You are an expert at synthesizing multiple agent perspectives. Always respond with valid JSON.",
+        )
+        self.negotiator = GeminiAgent(
+            model=model,
+            system_prompt="You are a collaborative AI agent reviewing peer work. Be concise and constructive.",
         )
         self._toolsets: list[McpToolset] = []
+        self._mcp_clients = None  # Set by server for smart context
         self._red: LlmAgent | None = None
         self._blue: LlmAgent | None = None
         self._green: LlmAgent | None = None
 
     async def initialize(self, python_cmd: str, env: dict):
         """Initialize MCP toolsets and ADK agents."""
-        # Create MCP toolsets via ADK's McpToolset
         tasks_toolset = McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
@@ -106,7 +139,6 @@ class Orchestrator:
 
         self._toolsets = [tasks_toolset, notes_toolset, calendar_toolset, email_toolset]
 
-        # Create ADK agents with MCP tools
         self._red = create_red_agent(tools=list(self._toolsets), model=self.model)
         self._blue = create_blue_agent(tools=list(self._toolsets), model=self.model)
         self._green = create_green_agent(tools=list(self._toolsets), model=self.model)
@@ -114,27 +146,47 @@ class Orchestrator:
         print(f"[Prism] ADK agents initialized (model: {self.model})")
 
     async def run(self, request: str, callback=None) -> dict:
-        """Run all 3 ADK agents in parallel, then merge results."""
-        # Inject current date context so agents know what "today"/"tomorrow" means
+        """Full Prism pipeline: context → agents → negotiation → merge."""
         now = datetime.now()
         tomorrow = now + timedelta(days=1)
-        context = f"[Current date: {now.strftime('%Y-%m-%d')} ({now.strftime('%A')}). Tomorrow: {tomorrow.strftime('%Y-%m-%d')} ({tomorrow.strftime('%A')}).]\n\n{request}"
 
-        # Signal agent start
+        # ── Phase 1: Smart Context (AlloyDB AI) ──────────────
+        if callback:
+            await callback({"type": "context_gathering", "message": "Searching for relevant context via AlloyDB AI..."})
+
+        smart_context = await self._gather_context(request)
+
+        if callback:
+            await callback({"type": "context_done", "context": smart_context})
+
+        # Build enriched prompt with date + context
+        enriched = f"[Current date: {now.strftime('%Y-%m-%d')} ({now.strftime('%A')}). Tomorrow: {tomorrow.strftime('%Y-%m-%d')} ({tomorrow.strftime('%A')}).]"
+        if smart_context:
+            enriched += f"\n\n[Relevant context from your data:\n{smart_context}]"
+        enriched += f"\n\n{request}"
+
+        # ── Phase 2: Parallel Agent Execution ─────────────────
         if callback:
             for name, color in [("red", "#EF4444"), ("blue", "#3B82F6"), ("green", "#10B981")]:
                 await callback({"type": "agent_start", "agent": name, "color": color})
 
-        # Run ADK agents in parallel
-        results: list[AgentResult] = await asyncio.gather(
-            self._run_agent(self._red, "red", "#EF4444", context, callback),
-            self._run_agent(self._blue, "blue", "#3B82F6", context, callback),
-            self._run_agent(self._green, "green", "#10B981", context, callback),
-        )
+        # Stagger agent launches slightly to reduce rate limit pressure
+        async def launch_red():
+            return await self._run_agent(self._red, "red", "#EF4444", enriched, callback)
 
+        async def launch_blue():
+            await asyncio.sleep(0.5)
+            return await self._run_agent(self._blue, "blue", "#3B82F6", enriched, callback)
+
+        async def launch_green():
+            await asyncio.sleep(1.0)
+            return await self._run_agent(self._green, "green", "#10B981", enriched, callback)
+
+        results: list[AgentResult] = await asyncio.gather(
+            launch_red(), launch_blue(), launch_green(),
+        )
         red_result, blue_result, green_result = results
 
-        # Emit agent_done events
         if callback:
             for result in results:
                 await callback({
@@ -150,14 +202,24 @@ class Orchestrator:
                     "error": result.error,
                 })
 
-        # Brief pause before merge to avoid rate limits after parallel agent calls
-        await asyncio.sleep(3)
+        # ── Phase 3: Agent Negotiation ────────────────────────
+        await asyncio.sleep(2)
 
-        # Merge phase
+        if callback:
+            await callback({"type": "negotiation_start", "message": "Agents reviewing each other's work..."})
+
+        negotiations = await self._negotiate(request, red_result, blue_result, green_result)
+
+        if callback:
+            await callback({"type": "negotiation_done", "negotiations": negotiations})
+
+        # ── Phase 4: Merge ────────────────────────────────────
+        await asyncio.sleep(2)
+
         if callback:
             await callback({"type": "merge_start"})
 
-        merged = await self._merge(request, red_result, blue_result, green_result)
+        merged = await self._merge(request, smart_context, red_result, blue_result, green_result, negotiations)
 
         if callback:
             await callback({"type": "merge_done", "result": merged})
@@ -168,41 +230,112 @@ class Orchestrator:
                 "blue": self._result_to_dict(blue_result),
                 "green": self._result_to_dict(green_result),
             },
+            "negotiations": negotiations,
+            "smart_context": smart_context,
             "merged": merged,
         }
+
+    async def _gather_context(self, request: str) -> str:
+        """Use MCP semantic search to find relevant tasks and notes."""
+        if not self._mcp_clients:
+            return ""
+
+        context_parts = []
+        try:
+            # Semantic search tasks
+            result = await self._mcp_clients["tasks"].call_tool(
+                "semantic_search_tasks", {"query": request, "limit": 3}
+            )
+            if result and result.content:
+                tasks = json.loads(result.content[0].text)
+                if tasks:
+                    context_parts.append("Related tasks: " + "; ".join(
+                        f"'{t.get('title', '')}' ({t.get('status', '')}, {t.get('priority', '')} priority)"
+                        for t in tasks[:3]
+                    ))
+        except Exception as e:
+            print(f"[Prism] Context search (tasks) failed: {e}")
+
+        try:
+            # Semantic search notes
+            result = await self._mcp_clients["notes"].call_tool(
+                "semantic_search_notes", {"query": request, "limit": 3}
+            )
+            if result and result.content:
+                notes = json.loads(result.content[0].text)
+                if notes:
+                    context_parts.append("Related notes: " + "; ".join(
+                        f"'{n.get('title', '')}'"
+                        for n in notes[:3]
+                    ))
+        except Exception as e:
+            print(f"[Prism] Context search (notes) failed: {e}")
+
+        return "\n".join(context_parts) if context_parts else ""
+
+    async def _negotiate(self, request: str, red: AgentResult, blue: AgentResult, green: AgentResult) -> dict:
+        """Run negotiation round — each agent reviews the other two."""
+        agents_data = [
+            ("Red", "Speed-focused, quick action", red, [blue, green]),
+            ("Blue", "Depth-focused, thorough analysis", blue, [red, green]),
+            ("Green", "Creative, lateral thinking", green, [red, blue]),
+        ]
+
+        async def get_feedback(name, style, own, others):
+            other_text = "\n\n".join(
+                f"**{o.agent_name.upper()} AGENT:** {o.response[:500]}"
+                for o in others if o.response
+            )
+            prompt = NEGOTIATION_PROMPT.format(
+                agent_name=name, agent_style=style,
+                request=request,
+                own_response=own.response[:500] if own.response else "[No response]",
+                other_responses=other_text or "[No responses from other agents]",
+            )
+            try:
+                response = await self.negotiator.generate(
+                    [{"role": "user", "parts": [prompt]}]
+                )
+                return GeminiAgent.extract_text(response)
+            except Exception as e:
+                return f"[Negotiation skipped: {str(e)[:80]}]"
+
+        # Run negotiations in parallel
+        feedbacks = await asyncio.gather(
+            get_feedback(*agents_data[0]),
+            get_feedback(*agents_data[1]),
+            get_feedback(*agents_data[2]),
+        )
+
+        return {"red": feedbacks[0], "blue": feedbacks[1], "green": feedbacks[2]}
 
     async def _run_agent(self, agent: LlmAgent, name: str, color: str, request: str, callback=None) -> AgentResult:
         """Run a single ADK agent with timeout."""
         try:
             return await asyncio.wait_for(
                 run_adk_agent(
-                    agent=agent,
-                    agent_name=name,
-                    color=color,
-                    query=request,
-                    session_service=self.session_service,
+                    agent=agent, agent_name=name, color=color,
+                    query=request, session_service=self.session_service,
                     callback=callback,
                 ),
                 timeout=60,
             )
         except asyncio.TimeoutError:
-            return AgentResult(
-                agent_name=name, color=color, response="",
-                error="Agent timed out after 60 seconds",
-            )
+            return AgentResult(agent_name=name, color=color, response="", error="Agent timed out after 60 seconds")
         except Exception as e:
-            return AgentResult(
-                agent_name=name, color=color, response="",
-                error=str(e),
-            )
+            return AgentResult(agent_name=name, color=color, response="", error=str(e))
 
-    async def _merge(self, request: str, red: AgentResult, blue: AgentResult, green: AgentResult) -> dict:
-        """Use Gemini to merge the three agent results."""
+    async def _merge(self, request: str, smart_context: str, red: AgentResult, blue: AgentResult, green: AgentResult, negotiations: dict) -> dict:
+        """Merge with negotiation context."""
         prompt = MERGE_PROMPT.format(
             request=request,
+            smart_context=smart_context or "No additional context found.",
             red_response=red.response or f"[Error: {red.error}]",
             blue_response=blue.response or f"[Error: {blue.error}]",
             green_response=green.response or f"[Error: {green.error}]",
+            red_negotiation=negotiations.get("red", "N/A"),
+            blue_negotiation=negotiations.get("blue", "N/A"),
+            green_negotiation=negotiations.get("green", "N/A"),
         )
 
         try:
@@ -210,21 +343,18 @@ class Orchestrator:
                 [{"role": "user", "parts": [prompt]}]
             )
             text = GeminiAgent.extract_text(response)
-
-            # Strip markdown code fences
             clean = text.strip()
             if clean.startswith("```"):
                 clean = clean.split("\n", 1)[-1]
                 if clean.endswith("```"):
                     clean = clean[:-3]
                 clean = clean.strip()
-
             try:
                 return json.loads(clean)
             except json.JSONDecodeError:
-                return {"merged_response": text, "contributions": [], "verdict": ""}
+                return {"merged_response": text, "contributions": [], "conflicts_resolved": "", "verdict": ""}
         except Exception as e:
-            return {"merged_response": f"Merge failed: {str(e)}", "contributions": [], "verdict": "Error during merge"}
+            return {"merged_response": f"Merge failed: {str(e)}", "contributions": [], "conflicts_resolved": "", "verdict": "Error during merge"}
 
     @staticmethod
     def _result_to_dict(result: AgentResult) -> dict:
@@ -245,7 +375,6 @@ class Orchestrator:
         """Log agent performance metrics to database."""
         if not db_pool or not session_id:
             return
-        # Determine which agents were selected based on merge contributions
         selected_agents = set()
         for c in merged.get("contributions", []):
             if c.get("kept") and c["kept"] != "None":
@@ -257,11 +386,7 @@ class Orchestrator:
                 await db_pool.execute(
                     """INSERT INTO agent_performance (session_id, agent_name, was_selected, tools_used, execution_time_ms)
                        VALUES ($1, $2, $3, $4, $5)""",
-                    session_id,
-                    name,
-                    name in selected_agents,
-                    tools,
-                    data.get("execution_time_ms", 0),
+                    session_id, name, name in selected_agents, tools, data.get("execution_time_ms", 0),
                 )
             except Exception as e:
                 print(f"[Prism] Failed to log performance for {name}: {e}")

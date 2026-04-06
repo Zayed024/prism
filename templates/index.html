@@ -136,6 +136,26 @@
                     </div>
                 </div>
 
+                <!-- Context panel -->
+                <div id="context-panel" class="glass rounded-xl overflow-hidden hidden mb-4">
+                    <div class="px-4 py-2 border-b border-slate-700/50 flex items-center gap-2" style="background: rgba(168,85,247,0.08)">
+                        <svg class="w-4 h-4 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                        <span class="font-medium text-violet-300 text-xs">AlloyDB AI — Smart Context</span>
+                        <div id="context-status" class="ml-auto"></div>
+                    </div>
+                    <div id="context-content" class="px-4 py-2 text-xs text-slate-400"></div>
+                </div>
+
+                <!-- Negotiation panel -->
+                <div id="negotiation-panel" class="glass rounded-xl overflow-hidden hidden mb-4">
+                    <div class="px-4 py-2 border-b border-slate-700/50 flex items-center gap-2" style="background: rgba(251,191,36,0.08)">
+                        <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                        <span class="font-medium text-amber-300 text-xs">Agent Negotiation</span>
+                        <div id="negotiation-status" class="ml-auto"></div>
+                    </div>
+                    <div id="negotiation-content" class="px-4 py-3 space-y-2"></div>
+                </div>
+
                 <!-- Merge panel -->
                 <div id="merge-panel" class="glass rounded-xl overflow-hidden hidden">
                     <div class="px-4 py-3 border-b border-slate-700/50 flex items-center gap-2" style="background: linear-gradient(90deg, rgba(239,68,68,0.08), rgba(59,130,246,0.08), rgba(16,185,129,0.08))">
@@ -281,6 +301,10 @@ function runPrism() {
         document.getElementById('time-' + a).classList.add('hidden');
         document.getElementById('status-' + a).innerHTML = '<span>Waiting</span>';
     });
+    document.getElementById('context-panel').classList.add('hidden');
+    document.getElementById('context-content').innerHTML = '';
+    document.getElementById('negotiation-panel').classList.add('hidden');
+    document.getElementById('negotiation-content').innerHTML = '';
     document.getElementById('merge-panel').classList.add('hidden');
     document.getElementById('merge-content').innerHTML = '';
     document.getElementById('contributions').innerHTML = '';
@@ -294,6 +318,23 @@ function runPrism() {
     const url = '/api/prism?' + new URLSearchParams({ query });
     const es = new EventSource(url);
 
+    // Phase 1: Smart Context
+    es.addEventListener('context_gathering', (e) => {
+        const panel = document.getElementById('context-panel');
+        panel.classList.remove('hidden');
+        panel.classList.add('fade-in');
+        document.getElementById('context-status').innerHTML = '<span class="spinner" style="border-top-color:#a78bfa;width:12px;height:12px"></span>';
+        document.getElementById('context-content').innerHTML = '<span class="text-violet-400 pulse-anim">Searching tasks & notes via AlloyDB AI semantic search...</span>';
+    });
+
+    es.addEventListener('context_done', (e) => {
+        const data = JSON.parse(e.data);
+        document.getElementById('context-status').innerHTML = '<span class="text-emerald-400 text-[10px]">Done</span>';
+        const ctx = data.context || 'No additional context found.';
+        document.getElementById('context-content').innerHTML = esc(ctx) || '<span class="text-slate-500">No matching context found</span>';
+    });
+
+    // Phase 2: Agents
     es.addEventListener('agent_start', (e) => {
         const data = JSON.parse(e.data);
         const el = document.getElementById('status-' + data.agent);
@@ -337,6 +378,31 @@ function runPrism() {
         timeEl.classList.remove('hidden');
     });
 
+    // Phase 3: Negotiation
+    es.addEventListener('negotiation_start', () => {
+        const panel = document.getElementById('negotiation-panel');
+        panel.classList.remove('hidden');
+        panel.classList.add('fade-in');
+        document.getElementById('negotiation-status').innerHTML = '<span class="spinner" style="border-top-color:#fbbf24;width:12px;height:12px"></span>';
+        document.getElementById('negotiation-content').innerHTML = '<span class="text-amber-400 text-xs pulse-anim">Agents reviewing each other\'s work...</span>';
+    });
+
+    es.addEventListener('negotiation_done', (e) => {
+        const data = JSON.parse(e.data);
+        const negs = data.negotiations || {};
+        document.getElementById('negotiation-status').innerHTML = '<span class="text-emerald-400 text-[10px]">Done</span>';
+        const colors = { red: { bg: 'rgba(239,68,68,0.1)', text: 'text-red-400', dot: 'bg-red-500' }, blue: { bg: 'rgba(59,130,246,0.1)', text: 'text-blue-400', dot: 'bg-blue-500' }, green: { bg: 'rgba(16,185,129,0.1)', text: 'text-emerald-400', dot: 'bg-emerald-500' } };
+        document.getElementById('negotiation-content').innerHTML = ['red','blue','green'].map(a => {
+            const c = colors[a];
+            const feedback = negs[a] || 'No feedback';
+            return `<div class="rounded-lg px-3 py-2 text-xs" style="background:${c.bg}">
+                <div class="flex items-center gap-1.5 mb-1"><span class="w-2 h-2 rounded-full ${c.dot}"></span><span class="font-semibold ${c.text}">${a.charAt(0).toUpperCase() + a.slice(1)} Agent</span></div>
+                <div class="text-slate-300">${esc(feedback)}</div>
+            </div>`;
+        }).join('');
+    });
+
+    // Phase 4: Merge
     es.addEventListener('merge_start', () => {
         const panel = document.getElementById('merge-panel');
         panel.classList.remove('hidden');
@@ -362,6 +428,12 @@ function runPrism() {
                     <div class="text-xs text-slate-400"><strong class="text-slate-300">${esc(c.kept || '')}</strong>
                     ${c.reason ? ' — ' + esc(c.reason) : ''}</div>
                 </div>`).join('');
+        }
+
+        // Conflicts resolved
+        if (result.conflicts_resolved) {
+            document.getElementById('contributions').innerHTML +=
+                `<div class="mt-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300"><strong>Conflicts resolved:</strong> ${esc(result.conflicts_resolved)}</div>`;
         }
 
         // Verdict
