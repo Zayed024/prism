@@ -4,974 +4,370 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Prism — Multi-Agent Productivity Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config={theme:{extend:{fontFamily:{sans:['Inter','system-ui','sans-serif']}}}}</script>
     <style>
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-        .fade-in { animation: fadeIn 0.3s ease-out; }
-        .pulse-anim { animation: pulse 1.5s ease-in-out infinite; }
-        .spinner { animation: spin 0.8s linear infinite; border: 2px solid #e5e7eb; border-top-color: currentColor; border-radius: 50%; width: 16px; height: 16px; display: inline-block; }
-        .shimmer-bg { background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%); background-size: 200% 100%; animation: shimmer 2s infinite; }
-        body { background: #0f172a; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(148, 163, 184, 0.1); }
-        .tool-badge { font-size: 0.65rem; padding: 2px 6px; border-radius: 4px; font-family: monospace; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+        @keyframes glow{0%,100%{box-shadow:0 0 12px rgba(99,102,241,0.15)}50%{box-shadow:0 0 24px rgba(99,102,241,0.3)}}
+        .fade-up{animation:fadeUp .35s ease-out}.spin{animation:spin .7s linear infinite}
+        .shimmer{background:linear-gradient(90deg,#1e293b 25%,#334155 50%,#1e293b 75%);background-size:200% 100%;animation:shimmer 2s infinite}
+        .glow{animation:glow 2s ease-in-out infinite}
+        body{background:#0a0f1a;color:#e2e8f0}
+        .card{background:rgba(15,23,42,0.8);backdrop-filter:blur(16px);border:1px solid rgba(51,65,85,0.5);border-radius:12px}
+        .card-hover:hover{border-color:rgba(99,102,241,0.4);box-shadow:0 0 20px rgba(99,102,241,0.08)}
+        .tool-pill{font-size:10px;padding:2px 7px;border-radius:6px;font-family:'SF Mono',monospace;letter-spacing:0.02em}
+        .progress-bar{height:3px;border-radius:2px;transition:width .5s ease}
+        ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
     </style>
 </head>
-<body class="min-h-screen">
+<body class="min-h-screen font-sans">
 
-    <!-- Header -->
-    <header class="border-b border-slate-800 px-6 py-4">
-        <div class="max-w-7xl mx-auto flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 via-blue-500 to-emerald-500 flex items-center justify-center">
-                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                </div>
-                <h1 class="text-xl font-bold text-white">Prism</h1>
-                <span class="text-xs text-slate-500 ml-2">Multi-Agent Productivity Assistant</span>
+<!-- Header -->
+<header class="sticky top-0 z-50 border-b border-slate-800/80 bg-[#0a0f1a]/90 backdrop-blur-lg">
+    <div class="max-w-6xl mx-auto px-5 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+            <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
             </div>
-            <nav class="flex gap-1">
-                <button onclick="showView('ask')" id="nav-ask" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium text-white bg-slate-700">Ask</button>
-                <button onclick="showView('workflows')" id="nav-workflows" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white">Workflows</button>
-                <button onclick="showView('tasks')" id="nav-tasks" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white">Tasks</button>
-                <button onclick="showView('notes')" id="nav-notes" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white">Notes</button>
-                <button onclick="showView('history')" id="nav-history" class="nav-btn px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white">History</button>
-            </nav>
+            <span class="text-base font-bold text-white tracking-tight">Prism</span>
         </div>
-    </header>
+        <nav class="flex gap-0.5 bg-slate-800/50 rounded-lg p-0.5">
+            <button onclick="showView('ask')" id="nav-ask" class="nav-btn px-3 py-1.5 rounded-md text-xs font-medium text-white bg-slate-700">Ask</button>
+            <button onclick="showView('workflows')" id="nav-workflows" class="nav-btn px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white transition">Workflows</button>
+            <button onclick="showView('tasks')" id="nav-tasks" class="nav-btn px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white transition">Tasks</button>
+            <button onclick="showView('notes')" id="nav-notes" class="nav-btn px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white transition">Notes</button>
+            <button onclick="showView('history')" id="nav-history" class="nav-btn px-3 py-1.5 rounded-md text-xs font-medium text-slate-400 hover:text-white transition">History</button>
+        </nav>
+    </div>
+</header>
 
-    <main class="max-w-7xl mx-auto px-6 py-6">
+<main class="max-w-6xl mx-auto px-5 py-5">
 
-        <!-- ASK VIEW -->
-        <div id="view-ask">
-            <!-- Stats + Connection Status banner -->
-            <div class="flex gap-4 mb-4 flex-wrap">
-                <div class="glass rounded-lg px-4 py-2 flex items-center gap-2">
-                    <span class="text-slate-400 text-sm">Tasks</span>
-                    <span id="stat-tasks" class="text-white font-bold">-</span>
+<!-- ═══ ASK VIEW ═══ -->
+<div id="view-ask">
+    <!-- Stats + Connections -->
+    <div class="flex items-center gap-3 mb-4 flex-wrap">
+        <div class="flex gap-2">
+            <div class="card px-3 py-1.5 flex items-center gap-1.5 text-xs"><span class="text-slate-500">Tasks</span><span id="stat-tasks" class="text-white font-semibold">-</span></div>
+            <div class="card px-3 py-1.5 flex items-center gap-1.5 text-xs"><span class="text-slate-500">Notes</span><span id="stat-notes" class="text-white font-semibold">-</span></div>
+            <div class="card px-3 py-1.5 flex items-center gap-1.5 text-xs"><span class="text-slate-500">Sessions</span><span id="stat-sessions" class="text-white font-semibold">-</span></div>
+        </div>
+        <div id="connections-bar" class="flex gap-1.5 ml-auto flex-wrap"></div>
+    </div>
+
+    <!-- Query Input -->
+    <div class="card p-5 mb-5">
+        <div class="flex gap-2.5">
+            <input id="query-input" type="text" placeholder="What would you like to accomplish?"
+                class="flex-1 bg-slate-900/60 border border-slate-700/60 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30 transition"
+                onkeydown="if(event.key==='Enter')runPrism()">
+            <button onclick="runPrism()" id="run-btn"
+                class="px-5 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-500 transition shadow-lg shadow-indigo-600/20 whitespace-nowrap">
+                Run Prism
+            </button>
+        </div>
+        <div class="flex items-center gap-2 mt-3">
+            <div class="flex gap-1.5 flex-wrap flex-1">
+                <button onclick="setQuery('Plan my week - I need to finish the Q2 report and prepare for the client meeting on Friday')" class="text-[11px] px-2.5 py-1 rounded-md bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 transition">Plan my week</button>
+                <button onclick="setQuery('Check my unread emails and create tasks for anything urgent')" class="text-[11px] px-2.5 py-1 rounded-md bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 transition">Process inbox</button>
+                <button onclick="setQuery('What tasks are overdue? Summarize the situation and suggest next steps')" class="text-[11px] px-2.5 py-1 rounded-md bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 transition">Overdue check</button>
+                <button onclick="setQuery('Find free time tomorrow and schedule a 2-hour deep work block for the API docs')" class="text-[11px] px-2.5 py-1 rounded-md bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 transition">Focus time</button>
+            </div>
+            <label class="flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer select-none shrink-0">
+                <input type="checkbox" id="deep-toggle" class="w-3.5 h-3.5 rounded border-slate-600 bg-slate-800 text-indigo-500 focus:ring-indigo-500/30">
+                Deep analysis
+            </label>
+        </div>
+    </div>
+
+    <!-- Pipeline Area -->
+    <div id="agent-area" class="hidden">
+        <!-- Stepper -->
+        <div id="pipeline-stepper" class="card px-5 py-2.5 mb-4 flex items-center gap-0">
+            <div class="flex items-center gap-0 flex-1">
+                <div id="step-context" class="step-item flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <div class="w-5 h-5 rounded-full border border-slate-600 flex items-center justify-center text-[9px] font-bold">1</div><span>Context</span>
                 </div>
-                <div class="glass rounded-lg px-4 py-2 flex items-center gap-2">
-                    <span class="text-slate-400 text-sm">Notes</span>
-                    <span id="stat-notes" class="text-white font-bold">-</span>
+                <div class="flex-1 h-px bg-slate-700 mx-2"><div id="step-line-1" class="h-full bg-slate-700 transition-all duration-700" style="width:0"></div></div>
+                <div id="step-agents" class="step-item flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <div class="w-5 h-5 rounded-full border border-slate-600 flex items-center justify-center text-[9px] font-bold">2</div><span>Agents</span>
                 </div>
-                <div class="glass rounded-lg px-4 py-2 flex items-center gap-2">
-                    <span class="text-slate-400 text-sm">Sessions</span>
-                    <span id="stat-sessions" class="text-white font-bold">-</span>
+                <div class="flex-1 h-px bg-slate-700 mx-2"><div id="step-line-2" class="h-full bg-slate-700 transition-all duration-700" style="width:0"></div></div>
+                <div id="step-negotiate" class="step-item flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <div class="w-5 h-5 rounded-full border border-slate-600 flex items-center justify-center text-[9px] font-bold">3</div><span>Negotiate</span>
+                </div>
+                <div class="flex-1 h-px bg-slate-700 mx-2"><div id="step-line-3" class="h-full bg-slate-700 transition-all duration-700" style="width:0"></div></div>
+                <div id="step-merge" class="step-item flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <div class="w-5 h-5 rounded-full border border-slate-600 flex items-center justify-center text-[9px] font-bold">4</div><span>Merge</span>
                 </div>
             </div>
-            <!-- Data Sources -->
-            <div id="connections-bar" class="flex gap-2 mb-6 flex-wrap"></div>
+            <div id="pipeline-timer" class="ml-4 text-[11px] text-slate-500 font-mono tabular-nums">0.0s</div>
+        </div>
 
-            <!-- Input section -->
-            <div class="glass rounded-xl p-6 mb-6">
-                <div class="flex gap-3">
-                    <input id="query-input" type="text" placeholder="What would you like to accomplish?"
-                        class="flex-1 bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm"
-                        onkeydown="if(event.key==='Enter')runPrism()">
-                    <button onclick="runPrism()" id="run-btn"
-                        class="px-6 py-3 bg-gradient-to-r from-red-500 via-blue-500 to-emerald-500 text-white font-semibold rounded-lg hover:opacity-90 transition-opacity text-sm whitespace-nowrap">
-                        Run Prism
-                    </button>
-                </div>
-                <div class="flex gap-2 mt-3 flex-wrap">
-                    <button onclick="setQuery('Plan my week - I need to finish the Q2 report and prepare for the client meeting on Friday')" class="text-xs px-3 py-1 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition">Plan my week</button>
-                    <button onclick="setQuery('Check my unread emails and create tasks for anything urgent')" class="text-xs px-3 py-1 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition">Process inbox</button>
-                    <button onclick="setQuery('What tasks are overdue? Summarize the situation and suggest next steps')" class="text-xs px-3 py-1 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition">Overdue check</button>
-                    <button onclick="setQuery('Find free time tomorrow and schedule a 2-hour deep work block for the API docs')" class="text-xs px-3 py-1 rounded-full bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition">Schedule focus time</button>
-                </div>
+        <!-- Context Panel -->
+        <div id="context-panel" class="hidden card px-4 py-2.5 mb-3 fade-up">
+            <div class="flex items-center gap-2 text-[11px]">
+                <span class="text-indigo-400 font-medium">AlloyDB AI</span>
+                <span id="context-status"></span>
             </div>
+            <div id="context-content" class="text-[11px] text-slate-400 mt-1"></div>
+        </div>
 
-            <!-- Pipeline Stepper -->
-            <div id="pipeline-stepper" class="hidden glass rounded-xl px-6 py-3 mb-6 flex items-center justify-between">
-                <div class="flex items-center gap-0 flex-1">
-                    <div id="step-context" class="flex items-center gap-1.5 text-xs text-slate-500">
-                        <div class="w-6 h-6 rounded-full border-2 border-slate-600 flex items-center justify-center text-[10px] font-bold">1</div>
-                        <span class="hidden sm:inline">Context</span>
-                    </div>
-                    <div class="flex-1 h-0.5 bg-slate-700 mx-2"><div id="step-line-1" class="h-full bg-slate-700 w-0 transition-all duration-500"></div></div>
-                    <div id="step-agents" class="flex items-center gap-1.5 text-xs text-slate-500">
-                        <div class="w-6 h-6 rounded-full border-2 border-slate-600 flex items-center justify-center text-[10px] font-bold">2</div>
-                        <span class="hidden sm:inline">Agents</span>
-                    </div>
-                    <div class="flex-1 h-0.5 bg-slate-700 mx-2"><div id="step-line-2" class="h-full bg-slate-700 w-0 transition-all duration-500"></div></div>
-                    <div id="step-negotiation" class="flex items-center gap-1.5 text-xs text-slate-500">
-                        <div class="w-6 h-6 rounded-full border-2 border-slate-600 flex items-center justify-center text-[10px] font-bold">3</div>
-                        <span class="hidden sm:inline">Negotiate</span>
-                    </div>
-                    <div class="flex-1 h-0.5 bg-slate-700 mx-2"><div id="step-line-3" class="h-full bg-slate-700 w-0 transition-all duration-500"></div></div>
-                    <div id="step-merge" class="flex items-center gap-1.5 text-xs text-slate-500">
-                        <div class="w-6 h-6 rounded-full border-2 border-slate-600 flex items-center justify-center text-[10px] font-bold">4</div>
-                        <span class="hidden sm:inline">Merge</span>
-                    </div>
+        <!-- Agent Columns -->
+        <div class="grid grid-cols-3 gap-3 mb-4">
+            <div id="col-red" class="card overflow-hidden">
+                <div class="px-3 py-2 border-b border-slate-800/80 flex items-center justify-between">
+                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-red-500"></div><span class="text-xs font-semibold text-red-400">Red — Speed</span></div>
+                    <div id="status-red" class="text-[10px] text-slate-500">Waiting</div>
                 </div>
-                <div id="pipeline-timer" class="ml-4 text-xs text-slate-500 font-mono tabular-nums w-12 text-right">0.0s</div>
+                <div id="tools-red" class="px-3 py-1.5 space-y-0.5 border-b border-slate-800/50 min-h-[28px] max-h-[100px] overflow-y-auto"></div>
+                <div id="response-red" class="px-3 py-2.5 text-xs text-slate-300 max-h-[280px] overflow-y-auto leading-relaxed"></div>
+                <div id="time-red" class="px-3 py-1.5 border-t border-slate-800/50 text-[10px] text-slate-600 hidden"></div>
             </div>
-
-            <!-- Agent columns -->
-            <div id="agent-area" class="hidden">
-                <div class="grid grid-cols-3 gap-4 mb-6">
-                    <!-- Red Agent -->
-                    <div id="col-red" class="glass rounded-xl overflow-hidden">
-                        <div class="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between" style="background: rgba(239,68,68,0.1)">
-                            <div class="flex items-center gap-2">
-                                <div class="w-3 h-3 rounded-full bg-red-500"></div>
-                                <span class="font-semibold text-red-400 text-sm">Red — Speed</span>
-                            </div>
-                            <div id="status-red" class="flex items-center gap-1 text-xs text-slate-500">
-                                <span>Waiting</span>
-                            </div>
-                        </div>
-                        <div id="tools-red" class="px-4 py-2 space-y-1 border-b border-slate-700/30 min-h-[40px] max-h-[120px] overflow-y-auto"></div>
-                        <div id="response-red" class="px-4 py-3 text-sm text-slate-300 max-h-[300px] overflow-y-auto"></div>
-                        <div id="time-red" class="px-4 py-2 border-t border-slate-700/30 text-xs text-slate-500 hidden"></div>
-                    </div>
-
-                    <!-- Blue Agent -->
-                    <div id="col-blue" class="glass rounded-xl overflow-hidden">
-                        <div class="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between" style="background: rgba(59,130,246,0.1)">
-                            <div class="flex items-center gap-2">
-                                <div class="w-3 h-3 rounded-full bg-blue-500"></div>
-                                <span class="font-semibold text-blue-400 text-sm">Blue — Depth</span>
-                            </div>
-                            <div id="status-blue" class="flex items-center gap-1 text-xs text-slate-500">
-                                <span>Waiting</span>
-                            </div>
-                        </div>
-                        <div id="tools-blue" class="px-4 py-2 space-y-1 border-b border-slate-700/30 min-h-[40px] max-h-[120px] overflow-y-auto"></div>
-                        <div id="response-blue" class="px-4 py-3 text-sm text-slate-300 max-h-[300px] overflow-y-auto"></div>
-                        <div id="time-blue" class="px-4 py-2 border-t border-slate-700/30 text-xs text-slate-500 hidden"></div>
-                    </div>
-
-                    <!-- Green Agent -->
-                    <div id="col-green" class="glass rounded-xl overflow-hidden">
-                        <div class="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between" style="background: rgba(16,185,129,0.1)">
-                            <div class="flex items-center gap-2">
-                                <div class="w-3 h-3 rounded-full bg-emerald-500"></div>
-                                <span class="font-semibold text-emerald-400 text-sm">Green — Creative</span>
-                            </div>
-                            <div id="status-green" class="flex items-center gap-1 text-xs text-slate-500">
-                                <span>Waiting</span>
-                            </div>
-                        </div>
-                        <div id="tools-green" class="px-4 py-2 space-y-1 border-b border-slate-700/30 min-h-[40px] max-h-[120px] overflow-y-auto"></div>
-                        <div id="response-green" class="px-4 py-3 text-sm text-slate-300 max-h-[300px] overflow-y-auto"></div>
-                        <div id="time-green" class="px-4 py-2 border-t border-slate-700/30 text-xs text-slate-500 hidden"></div>
-                    </div>
+            <div id="col-blue" class="card overflow-hidden">
+                <div class="px-3 py-2 border-b border-slate-800/80 flex items-center justify-between">
+                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-blue-500"></div><span class="text-xs font-semibold text-blue-400">Blue — Depth</span></div>
+                    <div id="status-blue" class="text-[10px] text-slate-500">Waiting</div>
                 </div>
-
-                <!-- Context panel -->
-                <div id="context-panel" class="glass rounded-xl overflow-hidden hidden mb-4">
-                    <div class="px-4 py-2 border-b border-slate-700/50 flex items-center gap-2" style="background: rgba(168,85,247,0.08)">
-                        <svg class="w-4 h-4 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                        <span class="font-medium text-violet-300 text-xs">AlloyDB AI — Smart Context</span>
-                        <div id="context-status" class="ml-auto"></div>
-                    </div>
-                    <div id="context-content" class="px-4 py-2 text-xs text-slate-400"></div>
+                <div id="tools-blue" class="px-3 py-1.5 space-y-0.5 border-b border-slate-800/50 min-h-[28px] max-h-[100px] overflow-y-auto"></div>
+                <div id="response-blue" class="px-3 py-2.5 text-xs text-slate-300 max-h-[280px] overflow-y-auto leading-relaxed"></div>
+                <div id="time-blue" class="px-3 py-1.5 border-t border-slate-800/50 text-[10px] text-slate-600 hidden"></div>
+            </div>
+            <div id="col-green" class="card overflow-hidden">
+                <div class="px-3 py-2 border-b border-slate-800/80 flex items-center justify-between">
+                    <div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-emerald-500"></div><span class="text-xs font-semibold text-emerald-400">Green — Creative</span></div>
+                    <div id="status-green" class="text-[10px] text-slate-500">Waiting</div>
                 </div>
-
-                <!-- Negotiation panel -->
-                <div id="negotiation-panel" class="glass rounded-xl overflow-hidden hidden mb-4">
-                    <div class="px-4 py-2 border-b border-slate-700/50 flex items-center gap-2" style="background: rgba(251,191,36,0.08)">
-                        <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
-                        <span class="font-medium text-amber-300 text-xs">Agent Negotiation</span>
-                        <div id="negotiation-status" class="ml-auto"></div>
-                    </div>
-                    <div id="negotiation-content" class="px-4 py-3 space-y-2"></div>
-                </div>
-
-                <!-- Merge panel -->
-                <div id="merge-panel" class="glass rounded-xl overflow-hidden hidden">
-                    <div class="px-4 py-3 border-b border-slate-700/50 flex items-center gap-2" style="background: linear-gradient(90deg, rgba(239,68,68,0.08), rgba(59,130,246,0.08), rgba(16,185,129,0.08))">
-                        <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-                        <span class="font-semibold text-purple-300 text-sm">Orchestrator Merge</span>
-                        <div id="merge-status" class="ml-auto"></div>
-                    </div>
-                    <div id="merge-content" class="px-4 py-4 text-sm text-slate-300"></div>
-                    <div id="contributions" class="px-4 pb-4"></div>
-                </div>
+                <div id="tools-green" class="px-3 py-1.5 space-y-0.5 border-b border-slate-800/50 min-h-[28px] max-h-[100px] overflow-y-auto"></div>
+                <div id="response-green" class="px-3 py-2.5 text-xs text-slate-300 max-h-[280px] overflow-y-auto leading-relaxed"></div>
+                <div id="time-green" class="px-3 py-1.5 border-t border-slate-800/50 text-[10px] text-slate-600 hidden"></div>
             </div>
         </div>
 
-        <!-- WORKFLOWS VIEW -->
-        <div id="view-workflows" class="hidden">
-            <div class="flex items-center justify-between mb-4">
-                <div>
-                    <h2 class="text-lg font-bold text-white">Multi-Step Workflows</h2>
-                    <p class="text-xs text-slate-500 mt-0.5">Pre-built workflows that chain multiple Prism queries sequentially</p>
-                </div>
-            </div>
-            <!-- Workflow Cards -->
-            <div id="workflow-cards" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6"></div>
-            <!-- Workflow Execution Area -->
-            <div id="workflow-exec" class="hidden">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 id="workflow-exec-title" class="text-sm font-bold text-white"></h3>
-                    <button onclick="cancelWorkflow()" id="workflow-cancel-btn" class="text-xs px-3 py-1 rounded-lg bg-slate-700 text-slate-400 hover:text-white">Close</button>
-                </div>
-                <!-- Workflow Step Timeline -->
-                <div id="workflow-timeline" class="space-y-3"></div>
-            </div>
+        <!-- Negotiation Panel -->
+        <div id="negotiation-panel" class="hidden card px-4 py-3 mb-3 fade-up">
+            <div class="flex items-center gap-2 mb-2"><span class="text-xs font-semibold text-amber-400">Agent Negotiation</span><span id="negotiation-status"></span></div>
+            <div id="negotiation-content" class="space-y-2"></div>
         </div>
 
-        <!-- TASKS VIEW -->
-        <div id="view-tasks" class="hidden">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-bold text-white">Tasks</h2>
-                <div class="flex gap-2">
-                    <button onclick="toggleAddTask()" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition">+ Add Task</button>
-                    <select id="task-filter-status" onchange="loadTasks()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-300">
-                        <option value="">All Status</option>
-                        <option value="todo">Todo</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="done">Done</option>
-                    </select>
-                    <select id="task-filter-priority" onchange="loadTasks()" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-300">
-                        <option value="">All Priority</option>
-                        <option value="high">High</option>
-                        <option value="medium">Medium</option>
-                        <option value="low">Low</option>
-                    </select>
+        <!-- Merge Panel -->
+        <div id="merge-panel" class="hidden card overflow-hidden glow fade-up">
+            <div class="px-4 py-3 border-b border-slate-800/50 flex items-center justify-between bg-gradient-to-r from-indigo-500/5 via-purple-500/5 to-pink-500/5">
+                <div class="flex items-center gap-2">
+                    <div class="w-5 h-5 rounded-md bg-indigo-500/20 flex items-center justify-center"><svg class="w-3 h-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg></div>
+                    <span class="text-sm font-semibold text-white">Merged Result</span>
                 </div>
+                <div id="merge-status"></div>
             </div>
-            <!-- Add Task Form -->
-            <div id="add-task-form" class="hidden glass rounded-xl p-4 mb-4 fade-in">
-                <div class="grid grid-cols-2 gap-3 mb-3">
-                    <input id="new-task-title" type="text" placeholder="Task title *" class="col-span-2 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
-                    <input id="new-task-desc" type="text" placeholder="Description" class="col-span-2 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
-                    <select id="new-task-priority" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300">
-                        <option value="medium">Medium priority</option>
-                        <option value="high">High priority</option>
-                        <option value="low">Low priority</option>
-                    </select>
-                    <input id="new-task-due" type="date" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-300">
-                    <input id="new-task-tags" type="text" placeholder="Tags (comma-separated)" class="col-span-2 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
-                </div>
-                <div class="flex gap-2 justify-end">
-                    <button onclick="toggleAddTask()" class="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white">Cancel</button>
-                    <button onclick="submitTask()" class="px-4 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700">Create</button>
-                </div>
-            </div>
-            <div id="tasks-list" class="space-y-2"></div>
+            <div id="merge-content" class="px-4 py-4 text-sm text-slate-300 leading-relaxed"></div>
+            <div id="contributions" class="px-4 pb-3"></div>
+            <div id="audit-bar"></div>
         </div>
+    </div>
+</div>
 
-        <!-- NOTES VIEW -->
-        <div id="view-notes" class="hidden">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-bold text-white">Notes</h2>
-                <button onclick="toggleAddNote()" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition">+ Add Note</button>
-            </div>
-            <!-- Add Note Form -->
-            <div id="add-note-form" class="hidden glass rounded-xl p-4 mb-4 fade-in">
-                <div class="space-y-3 mb-3">
-                    <input id="new-note-title" type="text" placeholder="Note title *" class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
-                    <textarea id="new-note-content" rows="4" placeholder="Content (supports markdown)" class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-y"></textarea>
-                    <input id="new-note-tags" type="text" placeholder="Tags (comma-separated)" class="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500">
-                </div>
-                <div class="flex gap-2 justify-end">
-                    <button onclick="toggleAddNote()" class="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-white">Cancel</button>
-                    <button onclick="submitNote()" class="px-4 py-1.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700">Create</button>
-                </div>
-            </div>
-            <div id="notes-list" class="space-y-3"></div>
+<!-- ═══ WORKFLOWS VIEW ═══ -->
+<div id="view-workflows" class="hidden">
+    <div class="mb-5">
+        <h2 class="text-lg font-bold text-white">Multi-Step Workflows</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Chain multiple Prism queries — each step feeds context to the next</p>
+    </div>
+    <div id="workflow-cards" class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5"></div>
+    <div id="workflow-exec" class="hidden">
+        <div class="flex items-center justify-between mb-3">
+            <h3 id="workflow-exec-title" class="text-sm font-bold text-white"></h3>
+            <button onclick="cancelWorkflow()" class="text-xs px-3 py-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition">Close</button>
         </div>
+        <div id="workflow-timeline" class="space-y-3"></div>
+    </div>
+</div>
 
-        <!-- HISTORY VIEW -->
-        <div id="view-history" class="hidden">
-            <!-- Agent Performance Chart -->
-            <div id="perf-section" class="glass rounded-xl p-5 mb-6">
-                <h3 class="text-sm font-semibold text-white mb-4">Agent Performance</h3>
-                <div id="perf-chart" class="flex gap-6 items-end justify-center h-48"></div>
-                <div id="perf-legend" class="flex gap-6 justify-center mt-4 text-xs text-slate-400"></div>
-                <div id="perf-empty" class="hidden text-center text-sm text-slate-500 py-8">Run a few Prism queries to see agent performance data here.</div>
-            </div>
-            <h2 class="text-lg font-bold text-white mb-4">Session History</h2>
-            <div id="history-list" class="space-y-3"></div>
+<!-- ═══ TASKS VIEW ═══ -->
+<div id="view-tasks" class="hidden">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-bold text-white">Tasks</h2>
+        <div class="flex gap-2">
+            <button onclick="toggleEl('add-task-form')" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-500 transition">+ Add Task</button>
+            <select id="task-filter-status" onchange="loadTasks()" class="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300">
+                <option value="">All Status</option><option value="todo">Todo</option><option value="in_progress">In Progress</option><option value="done">Done</option>
+            </select>
+            <select id="task-filter-priority" onchange="loadTasks()" class="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300">
+                <option value="">All Priority</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+            </select>
         </div>
-    </main>
+    </div>
+    <div id="add-task-form" class="hidden card p-4 mb-4 fade-up">
+        <div class="grid grid-cols-2 gap-2.5 mb-3">
+            <input id="new-task-title" type="text" placeholder="Task title *" class="col-span-2 bg-slate-900/60 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60">
+            <input id="new-task-desc" type="text" placeholder="Description" class="col-span-2 bg-slate-900/60 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60">
+            <select id="new-task-priority" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300"><option value="medium">Medium</option><option value="high">High</option><option value="low">Low</option></select>
+            <input id="new-task-due" type="date" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300">
+            <input id="new-task-tags" type="text" placeholder="Tags (comma-separated)" class="col-span-2 bg-slate-900/60 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60">
+        </div>
+        <div class="flex gap-2 justify-end">
+            <button onclick="toggleEl('add-task-form')" class="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white">Cancel</button>
+            <button onclick="submitTask()" class="px-4 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-500">Create</button>
+        </div>
+    </div>
+    <div id="tasks-list" class="space-y-1.5"></div>
+</div>
 
-    <!-- Footer -->
-    <footer class="border-t border-slate-800 mt-12 py-6">
-        <div class="max-w-7xl mx-auto px-6">
-            <div class="flex items-center justify-center gap-3 flex-wrap mb-2">
-                <span class="px-2.5 py-1 rounded-md bg-blue-500/10 border border-blue-500/20 text-[11px] text-blue-400 font-medium">Google ADK</span>
-                <span class="px-2.5 py-1 rounded-md bg-violet-500/10 border border-violet-500/20 text-[11px] text-violet-400 font-medium">Gemini 2.5 Flash</span>
-                <span class="px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400 font-medium">MCP Protocol</span>
-                <span class="px-2.5 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400 font-medium">AlloyDB AI</span>
-                <span class="px-2.5 py-1 rounded-md bg-red-500/10 border border-red-500/20 text-[11px] text-red-400 font-medium">Cloud Run</span>
-                <span class="px-2.5 py-1 rounded-md bg-slate-500/10 border border-slate-500/20 text-[11px] text-slate-400 font-medium">FastAPI</span>
-            </div>
-            <p class="text-center text-[11px] text-slate-600">Built for Gen AI Academy APAC Edition</p>
+<!-- ═══ NOTES VIEW ═══ -->
+<div id="view-notes" class="hidden">
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-bold text-white">Notes</h2>
+        <button onclick="toggleEl('add-note-form')" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-500 transition">+ Add Note</button>
+    </div>
+    <div id="add-note-form" class="hidden card p-4 mb-4 fade-up">
+        <div class="space-y-2.5 mb-3">
+            <input id="new-note-title" type="text" placeholder="Note title *" class="w-full bg-slate-900/60 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60">
+            <textarea id="new-note-content" rows="4" placeholder="Content (markdown)" class="w-full bg-slate-900/60 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 resize-y"></textarea>
+            <input id="new-note-tags" type="text" placeholder="Tags (comma-separated)" class="w-full bg-slate-900/60 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/60">
         </div>
-    </footer>
+        <div class="flex gap-2 justify-end">
+            <button onclick="toggleEl('add-note-form')" class="px-3 py-1.5 rounded-lg text-xs text-slate-400 hover:text-white">Cancel</button>
+            <button onclick="submitNote()" class="px-4 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-500">Create</button>
+        </div>
+    </div>
+    <div id="notes-list" class="space-y-2"></div>
+</div>
+
+<!-- ═══ HISTORY VIEW ═══ -->
+<div id="view-history" class="hidden">
+    <div id="perf-section" class="card p-5 mb-5">
+        <h3 class="text-xs font-semibold text-white mb-4">Agent Performance</h3>
+        <div id="perf-chart" class="flex gap-6 items-end justify-center h-44"></div>
+        <div id="perf-empty" class="hidden text-center text-xs text-slate-500 py-8">Run queries to see agent performance data</div>
+    </div>
+    <h2 class="text-lg font-bold text-white mb-3">Session History</h2>
+    <div id="history-list" class="space-y-2"></div>
+</div>
+</main>
+
+<!-- Footer -->
+<footer class="border-t border-slate-800/50 mt-10 py-5">
+    <div class="max-w-6xl mx-auto px-5 flex flex-col items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap justify-center">
+            <span class="px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-[10px] text-indigo-400 font-medium">Google ADK</span>
+            <span class="px-2 py-0.5 rounded-md bg-purple-500/10 border border-purple-500/20 text-[10px] text-purple-400 font-medium">Gemini 2.5 Flash</span>
+            <span class="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 font-medium">MCP</span>
+            <span class="px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400 font-medium">AlloyDB AI</span>
+            <span class="px-2 py-0.5 rounded-md bg-rose-500/10 border border-rose-500/20 text-[10px] text-rose-400 font-medium">Cloud Run</span>
+        </div>
+        <p class="text-[10px] text-slate-600">Built for Gen AI Academy APAC Edition</p>
+    </div>
+</footer>
 
 <script>
-// ── State ──
-let currentView = 'ask';
+// ═══ Helpers ═══
+const esc=(s)=>{const d=document.createElement('div');d.textContent=s||'';return d.innerHTML};
+const toggleEl=(id)=>document.getElementById(id).classList.toggle('hidden');
+function fmt(text){if(!text)return'';return text.split('\n').map(l=>{l=esc(l);if(l.startsWith('**')&&l.endsWith('**'))return`<div class="font-semibold text-white mt-1.5">${l.slice(2,-2)}</div>`;if(l.startsWith('- ')||l.startsWith('* '))return`<div class="ml-3">${l}</div>`;if(l.match(/^\d+\./))return`<div class="ml-3">${l}</div>`;if(!l.trim())return'<div class="h-1.5"></div>';return`<div>${l}</div>`}).join('')}
 
-// ── Navigation ──
-function showView(view) {
-    document.querySelectorAll('[id^="view-"]').forEach(el => el.classList.add('hidden'));
-    document.getElementById('view-' + view).classList.remove('hidden');
-    document.querySelectorAll('.nav-btn').forEach(btn => {
-        btn.classList.remove('text-white', 'bg-slate-700');
-        btn.classList.add('text-slate-400');
-    });
-    const btn = document.getElementById('nav-' + view);
-    btn.classList.add('text-white', 'bg-slate-700');
-    btn.classList.remove('text-slate-400');
-    currentView = view;
-    if (view === 'workflows') loadWorkflows();
-    if (view === 'tasks') loadTasks();
-    if (view === 'notes') loadNotes();
-    if (view === 'history') { loadHistory(); loadAgentStats(); }
+// ═══ Navigation ═══
+let currentView='ask';
+function showView(v){
+    document.querySelectorAll('[id^="view-"]').forEach(e=>e.classList.add('hidden'));
+    document.getElementById('view-'+v).classList.remove('hidden');
+    document.querySelectorAll('.nav-btn').forEach(b=>{b.classList.remove('text-white','bg-slate-700');b.classList.add('text-slate-400')});
+    document.getElementById('nav-'+v).classList.add('text-white','bg-slate-700');
+    document.getElementById('nav-'+v).classList.remove('text-slate-400');
+    currentView=v;
+    if(v==='workflows')loadWorkflows();if(v==='tasks')loadTasks();if(v==='notes')loadNotes();if(v==='history'){loadHistory();loadAgentStats()}
 }
+function setQuery(q){document.getElementById('query-input').value=q;document.getElementById('query-input').focus()}
 
-function setQuery(q) {
-    document.getElementById('query-input').value = q;
-    document.getElementById('query-input').focus();
-}
+// ═══ Stats ═══
+async function loadStats(){try{const r=await fetch('/api/stats');const d=await r.json();document.getElementById('stat-tasks').textContent=d.tasks||0;document.getElementById('stat-notes').textContent=d.notes||0;document.getElementById('stat-sessions').textContent=d.sessions||0}catch(e){}}
 
-// ── Stats ──
-async function loadStats() {
-    try {
-        const res = await fetch('/api/stats');
-        const data = await res.json();
-        document.getElementById('stat-tasks').textContent = data.tasks || 0;
-        document.getElementById('stat-notes').textContent = data.notes || 0;
-        document.getElementById('stat-sessions').textContent = data.sessions || 0;
-    } catch(e) {}
-}
+// ═══ Connections ═══
+async function loadConnections(){try{const r=await fetch('/api/connections');const d=await r.json();const el=document.getElementById('connections-bar');el.innerHTML=Object.entries(d).map(([k,v])=>{const live=v.status==='live';return`<div class="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] ${live?'bg-emerald-500/10 text-emerald-400':'bg-amber-500/10 text-amber-400'}"><span class="w-1 h-1 rounded-full ${live?'bg-emerald-400':'bg-amber-400'}"></span>${k}</div>`}).join('')}catch(e){}}
 
-// ── Pipeline Stepper ──
-let _timerStart = 0;
-let _timerInterval = null;
-
-function resetStepper() {
+// ═══ Pipeline Stepper ═══
+let _ts=0,_ti=null;
+function resetStepper(){
     document.getElementById('pipeline-stepper').classList.remove('hidden');
-    ['context','agents','negotiation','merge'].forEach(s => {
-        const el = document.getElementById('step-' + s);
-        el.querySelector('div').className = 'w-6 h-6 rounded-full border-2 border-slate-600 flex items-center justify-center text-[10px] font-bold';
-        el.classList.remove('text-white'); el.classList.add('text-slate-500');
-    });
-    ['step-line-1','step-line-2','step-line-3'].forEach(id => {
-        document.getElementById(id).style.width = '0%';
-        document.getElementById(id).className = 'h-full bg-slate-700 w-0 transition-all duration-500';
-    });
-    document.getElementById('pipeline-timer').textContent = '0.0s';
-    _timerStart = Date.now();
-    if (_timerInterval) clearInterval(_timerInterval);
-    _timerInterval = setInterval(() => {
-        document.getElementById('pipeline-timer').textContent = ((Date.now() - _timerStart) / 1000).toFixed(1) + 's';
-    }, 100);
+    ['context','agents','negotiate','merge'].forEach(s=>{const e=document.getElementById('step-'+s);e.querySelector('div').className='w-5 h-5 rounded-full border border-slate-600 flex items-center justify-center text-[9px] font-bold';e.classList.remove('text-indigo-400','text-emerald-400');e.classList.add('text-slate-500')});
+    ['step-line-1','step-line-2','step-line-3'].forEach(id=>{const e=document.getElementById(id);e.style.width='0';e.className='h-full bg-slate-700 transition-all duration-700'});
+    document.getElementById('pipeline-timer').textContent='0.0s';_ts=Date.now();if(_ti)clearInterval(_ti);_ti=setInterval(()=>{document.getElementById('pipeline-timer').textContent=((Date.now()-_ts)/1000).toFixed(1)+'s'},100);
 }
+function stepActive(n){const e=document.getElementById('step-'+n);e.querySelector('div').className='w-5 h-5 rounded-full border border-indigo-500 bg-indigo-500/20 flex items-center justify-center text-[9px] font-bold text-indigo-300';e.classList.remove('text-slate-500');e.classList.add('text-indigo-400')}
+function stepDone(n,line){const e=document.getElementById('step-'+n);e.querySelector('div').className='w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-[9px] font-bold text-white';e.classList.remove('text-slate-500','text-indigo-400');e.classList.add('text-emerald-400');if(line){const l=document.getElementById(line);l.style.width='100%';l.className='h-full bg-emerald-500 transition-all duration-700'}}
+function stopTimer(){if(_ti){clearInterval(_ti);_ti=null};document.getElementById('pipeline-timer').textContent=((Date.now()-_ts)/1000).toFixed(1)+'s'}
 
-function activateStep(name) {
-    const el = document.getElementById('step-' + name);
-    el.querySelector('div').className = 'w-6 h-6 rounded-full border-2 border-blue-500 bg-blue-500/20 flex items-center justify-center text-[10px] font-bold text-blue-400';
-    el.classList.remove('text-slate-500'); el.classList.add('text-blue-400');
-}
-
-function completeStep(name, lineId) {
-    const el = document.getElementById('step-' + name);
-    el.querySelector('div').className = 'w-6 h-6 rounded-full border-2 border-emerald-500 bg-emerald-500 flex items-center justify-center text-[10px] font-bold text-white';
-    el.classList.remove('text-slate-500', 'text-blue-400'); el.classList.add('text-emerald-400');
-    if (lineId) {
-        const line = document.getElementById(lineId);
-        line.style.width = '100%';
-        line.className = 'h-full bg-emerald-500 transition-all duration-500';
-    }
-}
-
-function stopTimer() {
-    if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
-    document.getElementById('pipeline-timer').textContent = ((Date.now() - _timerStart) / 1000).toFixed(1) + 's';
-}
-
-// ── Run Prism (SSE) ──
-function runPrism() {
-    const query = document.getElementById('query-input').value.trim();
-    if (!query) return;
-
-    // Reset UI
+// ═══ Run Prism ═══
+function runPrism(){
+    const query=document.getElementById('query-input').value.trim();if(!query)return;
+    const deep=document.getElementById('deep-toggle').checked;
     resetStepper();
-    const area = document.getElementById('agent-area');
-    area.classList.remove('hidden');
-    ['red', 'blue', 'green'].forEach(a => {
-        document.getElementById('tools-' + a).innerHTML = '';
-        document.getElementById('response-' + a).innerHTML = '';
-        document.getElementById('time-' + a).classList.add('hidden');
-        document.getElementById('status-' + a).innerHTML = '<span>Waiting</span>';
-    });
-    document.getElementById('context-panel').classList.add('hidden');
-    document.getElementById('context-content').innerHTML = '';
-    document.getElementById('negotiation-panel').classList.add('hidden');
-    document.getElementById('negotiation-content').innerHTML = '';
-    document.getElementById('merge-panel').classList.add('hidden');
-    document.getElementById('merge-content').innerHTML = '';
-    document.getElementById('contributions').innerHTML = '';
+    const area=document.getElementById('agent-area');area.classList.remove('hidden');
+    ['red','blue','green'].forEach(a=>{document.getElementById('tools-'+a).innerHTML='';document.getElementById('response-'+a).innerHTML='';document.getElementById('time-'+a).classList.add('hidden');document.getElementById('status-'+a).innerHTML='Waiting'});
+    document.getElementById('context-panel').classList.add('hidden');document.getElementById('negotiation-panel').classList.add('hidden');document.getElementById('merge-panel').classList.add('hidden');
+    document.getElementById('merge-content').innerHTML='';document.getElementById('contributions').innerHTML='';document.getElementById('audit-bar').innerHTML='';
+    const btn=document.getElementById('run-btn');btn.disabled=true;btn.innerHTML='<span class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full spin inline-block"></span> Running';
+    const params=new URLSearchParams({query});if(deep)params.set('deep','true');
+    const es=new EventSource('/api/prism?'+params);
 
-    // Disable button
-    const btn = document.getElementById('run-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner" style="border-top-color:white"></span> Running...';
-
-    // SSE connection
-    const url = '/api/prism?' + new URLSearchParams({ query });
-    const es = new EventSource(url);
-
-    // Phase 1: Smart Context
-    es.addEventListener('context_gathering', (e) => {
-        activateStep('context');
-        const panel = document.getElementById('context-panel');
-        panel.classList.remove('hidden');
-        panel.classList.add('fade-in');
-        document.getElementById('context-status').innerHTML = '<span class="spinner" style="border-top-color:#a78bfa;width:12px;height:12px"></span>';
-        document.getElementById('context-content').innerHTML = '<span class="text-violet-400 pulse-anim">Searching tasks & notes via AlloyDB AI semantic search...</span>';
-    });
-
-    es.addEventListener('context_done', (e) => {
-        completeStep('context', 'step-line-1');
-        const data = JSON.parse(e.data);
-        document.getElementById('context-status').innerHTML = '<span class="text-emerald-400 text-[10px]">Done</span>';
-        const ctx = data.context || 'No additional context found.';
-        document.getElementById('context-content').innerHTML = esc(ctx) || '<span class="text-slate-500">No matching context found</span>';
-    });
-
-    // Phase 2: Agents
-    es.addEventListener('agent_start', (e) => {
-        activateStep('agents');
-        const data = JSON.parse(e.data);
-        const el = document.getElementById('status-' + data.agent);
-        el.innerHTML = '<span class="spinner" style="border-top-color:' + data.color + '"></span><span>Working...</span>';
-    });
-
-    es.addEventListener('tool_call', (e) => {
-        const data = JSON.parse(e.data);
-        const el = document.getElementById('tools-' + data.agent);
-        const badge = document.createElement('div');
-        badge.className = 'fade-in flex items-center gap-1.5';
-        badge.innerHTML = `<span class="tool-badge text-slate-900" style="background:${data.color}">${data.tool}</span>
-            <span class="text-xs text-slate-500 truncate">${truncArgs(data.args)}</span>`;
-        el.appendChild(badge);
-        el.scrollTop = el.scrollHeight;
-    });
-
-    es.addEventListener('tool_result', (e) => {
-        // Visual feedback already via tool_call badges
-    });
-
-    es.addEventListener('agent_done', (e) => {
-        const data = JSON.parse(e.data);
-        const a = data.agent;
-        // Status
-        const statusEl = document.getElementById('status-' + a);
-        if (data.error) {
-            statusEl.innerHTML = '<span class="text-red-400">Error</span>';
-        } else {
-            statusEl.innerHTML = '<span class="text-emerald-400">Done</span>';
-        }
-        // Response
-        const respEl = document.getElementById('response-' + a);
-        respEl.innerHTML = data.error
-            ? `<div class="text-red-400">${esc(data.error)}</div>`
-            : formatResponse(data.response);
-        respEl.classList.add('fade-in');
-        // Time
-        const timeEl = document.getElementById('time-' + a);
-        timeEl.textContent = `${(data.execution_time_ms / 1000).toFixed(1)}s | ${data.tool_calls?.length || 0} tool calls`;
-        timeEl.classList.remove('hidden');
-    });
-
-    // Phase 3: Negotiation
-    es.addEventListener('negotiation_start', () => {
-        completeStep('agents', 'step-line-2');
-        activateStep('negotiation');
-        const panel = document.getElementById('negotiation-panel');
-        panel.classList.remove('hidden');
-        panel.classList.add('fade-in');
-        document.getElementById('negotiation-status').innerHTML = '<span class="spinner" style="border-top-color:#fbbf24;width:12px;height:12px"></span>';
-        document.getElementById('negotiation-content').innerHTML = '<span class="text-amber-400 text-xs pulse-anim">Agents reviewing each other\'s work...</span>';
-    });
-
-    es.addEventListener('negotiation_done', (e) => {
-        const data = JSON.parse(e.data);
-        const negs = data.negotiations || {};
-        document.getElementById('negotiation-status').innerHTML = '<span class="text-emerald-400 text-[10px]">Done</span>';
-        const colors = { red: { bg: 'rgba(239,68,68,0.1)', text: 'text-red-400', dot: 'bg-red-500' }, blue: { bg: 'rgba(59,130,246,0.1)', text: 'text-blue-400', dot: 'bg-blue-500' }, green: { bg: 'rgba(16,185,129,0.1)', text: 'text-emerald-400', dot: 'bg-emerald-500' } };
-        document.getElementById('negotiation-content').innerHTML = ['red','blue','green'].map(a => {
-            const c = colors[a];
-            const feedback = negs[a] || 'No feedback';
-            return `<div class="rounded-lg px-3 py-2 text-xs" style="background:${c.bg}">
-                <div class="flex items-center gap-1.5 mb-1"><span class="w-2 h-2 rounded-full ${c.dot}"></span><span class="font-semibold ${c.text}">${a.charAt(0).toUpperCase() + a.slice(1)} Agent</span></div>
-                <div class="text-slate-300">${esc(feedback)}</div>
-            </div>`;
-        }).join('');
-    });
-
-    // Phase 4: Merge
-    es.addEventListener('merge_start', () => {
-        completeStep('negotiation', 'step-line-3');
-        activateStep('merge');
-        const panel = document.getElementById('merge-panel');
-        panel.classList.remove('hidden');
-        panel.classList.add('fade-in');
-        document.getElementById('merge-status').innerHTML = '<span class="spinner" style="border-top-color:#a78bfa"></span>';
-        document.getElementById('merge-content').innerHTML = '<div class="shimmer-bg h-4 rounded w-3/4 mb-2"></div><div class="shimmer-bg h-4 rounded w-1/2"></div>';
-    });
-
-    es.addEventListener('contrarian_start', () => {
-        document.getElementById('merge-status').innerHTML = '<span class="text-xs text-rose-400">Generating contrarian view...</span>';
-    });
-
-    es.addEventListener('merge_done', (e) => {
-        const data = JSON.parse(e.data);
-        const result = data.result || {};
-        document.getElementById('merge-status').innerHTML = '<span class="text-emerald-400 text-xs">Complete</span>';
-        document.getElementById('merge-content').innerHTML = formatResponse(result.merged_response || 'No merge result');
-
-        // Contributions
-        const contribs = result.contributions || [];
-        if (contribs.length > 0) {
-            const contEl = document.getElementById('contributions');
-            const colors = { red: '#EF4444', blue: '#3B82F6', green: '#10B981' };
-            contEl.innerHTML = '<div class="text-xs font-semibold text-slate-400 mb-2">Contributions</div>' +
-                contribs.map(c => `<div class="flex items-start gap-2 mb-2">
-                    <span class="tool-badge text-white" style="background:${colors[c.agent] || '#6b7280'}">${c.agent}</span>
-                    <div class="text-xs text-slate-400"><strong class="text-slate-300">${esc(c.kept || '')}</strong>
-                    ${c.reason ? ' — ' + esc(c.reason) : ''}</div>
-                </div>`).join('');
-        }
-
-        // Conflicts resolved
-        if (result.conflicts_resolved) {
-            document.getElementById('contributions').innerHTML +=
-                `<div class="mt-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300"><strong>Conflicts resolved:</strong> ${esc(result.conflicts_resolved)}</div>`;
-        }
-
-        // Verdict
-        if (result.verdict) {
-            document.getElementById('merge-content').innerHTML +=
-                `<div class="mt-3 px-3 py-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-xs text-purple-300">${esc(result.verdict)}</div>`;
-        }
-
-        // Contrarian view
-        if (result.contrarian_view) {
-            document.getElementById('merge-content').innerHTML +=
-                `<div class="mt-3 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300">
-                    <div class="font-semibold mb-1 text-rose-400">Contrarian View</div>
-                    ${esc(result.contrarian_view)}
-                </div>`;
-        }
-
-        finish();
-    });
-
-    // Audit summary
-    es.addEventListener('audit_summary', (e) => {
-        const data = JSON.parse(e.data);
-        const a = data.audit || {};
-        const mergePanel = document.getElementById('merge-panel');
-        const auditEl = document.createElement('div');
-        auditEl.className = 'px-4 py-3 border-t border-slate-700/30';
-        auditEl.innerHTML = `
-            <div class="flex items-center justify-between text-[10px] text-slate-500">
-                <div class="flex gap-4">
-                    <span>Tokens: <strong class="text-slate-400">${(a.total_tokens || 0).toLocaleString()}</strong></span>
-                    <span>Est. cost: <strong class="text-slate-400">$${(a.total_cost_usd || 0).toFixed(4)}</strong></span>
-                    <span>Steps: <strong class="text-slate-400">${a.total_entries || 0}</strong></span>
-                    ${a.errors ? `<span class="text-red-400">Errors: ${a.errors}</span>` : ''}
-                </div>
-                <span>Model: ${a.model || 'unknown'}</span>
-            </div>
-        `;
-        mergePanel.appendChild(auditEl);
-    });
-
-    es.addEventListener('error', (e) => {
-        const data = e.data ? JSON.parse(e.data) : {};
-        console.error('Prism error:', data);
-        finish();
-    });
-
-    es.onerror = () => {
-        es.close();
-        finish();
-    };
-
-    function finish() {
-        es.close();
-        completeStep('merge', null);
-        stopTimer();
-        btn.disabled = false;
-        btn.innerHTML = 'Run Prism';
-        loadStats();
-    }
+    es.addEventListener('context_gathering',()=>{stepActive('context');document.getElementById('context-panel').classList.remove('hidden');document.getElementById('context-status').innerHTML='<span class="w-3 h-3 border border-indigo-400/30 border-t-indigo-400 rounded-full spin inline-block"></span>';document.getElementById('context-content').innerHTML='<span class="text-indigo-400/70">Semantic search via AlloyDB AI...</span>'});
+    es.addEventListener('context_done',(e)=>{stepDone('context','step-line-1');const d=JSON.parse(e.data);document.getElementById('context-status').innerHTML='<span class="text-emerald-400 text-[10px]">Done</span>';document.getElementById('context-content').innerHTML=esc(d.context)||'<span class="text-slate-500">No context found</span>'});
+    es.addEventListener('agent_start',(e)=>{stepActive('agents');const d=JSON.parse(e.data);document.getElementById('status-'+d.agent).innerHTML='<span class="w-3 h-3 border border-current/30 border-t-current rounded-full spin inline-block" style="color:'+d.color+'"></span>'});
+    es.addEventListener('tool_call',(e)=>{const d=JSON.parse(e.data);const el=document.getElementById('tools-'+d.agent);el.innerHTML+=`<div class="fade-up flex items-center gap-1"><span class="tool-pill text-slate-900" style="background:${d.color}">${d.tool}</span><span class="text-[10px] text-slate-600 truncate">${JSON.stringify(d.args||{}).slice(0,50)}</span></div>`;el.scrollTop=el.scrollHeight});
+    es.addEventListener('tool_result',()=>{});
+    es.addEventListener('agent_done',(e)=>{const d=JSON.parse(e.data);const a=d.agent;document.getElementById('status-'+a).innerHTML=d.error?'<span class="text-red-400 text-[10px]">Error</span>':'<span class="text-emerald-400 text-[10px]">Done</span>';const r=document.getElementById('response-'+a);r.innerHTML=d.error?`<div class="text-red-400/80 text-[11px]">${esc(d.error.slice(0,200))}</div>`:fmt(d.response);r.classList.add('fade-up');const t=document.getElementById('time-'+a);t.textContent=`${(d.execution_time_ms/1000).toFixed(1)}s · ${d.tool_calls?.length||0} tools`;t.classList.remove('hidden')});
+    es.addEventListener('negotiation_start',()=>{stepDone('agents','step-line-2');stepActive('negotiate');document.getElementById('negotiation-panel').classList.remove('hidden');document.getElementById('negotiation-status').innerHTML='<span class="w-3 h-3 border border-amber-400/30 border-t-amber-400 rounded-full spin inline-block"></span>';document.getElementById('negotiation-content').innerHTML='<span class="text-amber-400/70 text-xs">Agents reviewing each other...</span>'});
+    es.addEventListener('negotiation_done',(e)=>{stepDone('negotiate','step-line-3');const d=JSON.parse(e.data);const n=d.negotiations||{};document.getElementById('negotiation-status').innerHTML='<span class="text-emerald-400 text-[10px]">Done</span>';const colors={red:{bg:'rgba(239,68,68,0.06)',text:'text-red-400',dot:'bg-red-500'},blue:{bg:'rgba(59,130,246,0.06)',text:'text-blue-400',dot:'bg-blue-500'},green:{bg:'rgba(16,185,129,0.06)',text:'text-emerald-400',dot:'bg-emerald-500'}};document.getElementById('negotiation-content').innerHTML=['red','blue','green'].map(a=>{const c=colors[a];return`<div class="rounded-lg px-3 py-2 text-[11px]" style="background:${c.bg}"><span class="font-semibold ${c.text}">${a[0].toUpperCase()+a.slice(1)}:</span> <span class="text-slate-300">${esc(n[a]||'')}</span></div>`}).join('')});
+    es.addEventListener('merge_start',()=>{if(!document.getElementById('deep-toggle').checked){stepDone('agents','step-line-2');stepDone('negotiate','step-line-3')}stepActive('merge');const p=document.getElementById('merge-panel');p.classList.remove('hidden');document.getElementById('merge-status').innerHTML='<span class="w-3 h-3 border border-indigo-400/30 border-t-indigo-400 rounded-full spin inline-block"></span>';document.getElementById('merge-content').innerHTML='<div class="shimmer h-3 rounded w-3/4 mb-2"></div><div class="shimmer h-3 rounded w-1/2"></div>'});
+    es.addEventListener('contrarian_start',()=>{document.getElementById('merge-status').innerHTML='<span class="text-[10px] text-rose-400">Contrarian view...</span>'});
+    es.addEventListener('merge_done',(e)=>{const d=JSON.parse(e.data);const r=d.result||{};document.getElementById('merge-status').innerHTML='<span class="text-emerald-400 text-[10px]">Complete</span>';document.getElementById('merge-content').innerHTML=fmt(r.merged_response||'No result');
+        const contribs=r.contributions||[];if(contribs.length){const colors={red:'#EF4444',blue:'#3B82F6',green:'#10B981'};document.getElementById('contributions').innerHTML='<div class="text-[10px] font-semibold text-slate-500 mb-1.5 mt-1">Contributions</div>'+contribs.map(c=>`<div class="flex items-start gap-1.5 mb-1.5"><span class="tool-pill text-white shrink-0" style="background:${colors[c.agent]||'#666'}">${c.agent}</span><div class="text-[11px] text-slate-400"><strong class="text-slate-300">${esc(c.kept||'')}</strong>${c.reason?' — '+esc(c.reason):''}</div></div>`).join('')}
+        if(r.conflicts_resolved)document.getElementById('contributions').innerHTML+=`<div class="mt-1.5 px-2.5 py-1.5 rounded-md bg-amber-500/8 border border-amber-500/15 text-[11px] text-amber-300"><strong>Conflicts:</strong> ${esc(r.conflicts_resolved)}</div>`;
+        if(r.verdict)document.getElementById('merge-content').innerHTML+=`<div class="mt-2.5 px-2.5 py-1.5 rounded-md bg-indigo-500/8 border border-indigo-500/15 text-[11px] text-indigo-300">${esc(r.verdict)}</div>`;
+        if(r.contrarian_view)document.getElementById('merge-content').innerHTML+=`<div class="mt-2 px-2.5 py-1.5 rounded-md bg-rose-500/8 border border-rose-500/15 text-[11px] text-rose-300"><span class="font-semibold">Contrarian:</span> ${esc(r.contrarian_view)}</div>`;
+        finish()});
+    es.addEventListener('audit_summary',(e)=>{const d=JSON.parse(e.data);const a=d.audit||{};document.getElementById('audit-bar').innerHTML=`<div class="px-4 py-2 border-t border-slate-800/50 flex items-center justify-between text-[10px] text-slate-600"><div class="flex gap-3"><span>Tokens: <strong class="text-slate-400">${(a.total_tokens||0).toLocaleString()}</strong></span><span>Cost: <strong class="text-slate-400">$${(a.total_cost_usd||0).toFixed(4)}</strong></span><span>Steps: <strong class="text-slate-400">${a.total_entries||0}</strong></span></div><span>${a.model||''}</span></div>`});
+    es.addEventListener('error',()=>finish());es.onerror=()=>{es.close();finish()};
+    function finish(){es.close();stepDone('merge',null);stopTimer();btn.disabled=false;btn.innerHTML='Run Prism';loadStats()}
 }
 
-// ── Add Task/Note Forms ──
-function toggleAddTask() { document.getElementById('add-task-form').classList.toggle('hidden'); }
-function toggleAddNote() { document.getElementById('add-note-form').classList.toggle('hidden'); }
+// ═══ Task CRUD ═══
+async function submitTask(){const t=document.getElementById('new-task-title').value.trim();if(!t)return;await fetch('/api/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t,description:document.getElementById('new-task-desc').value,priority:document.getElementById('new-task-priority').value,due_date:document.getElementById('new-task-due').value?document.getElementById('new-task-due').value+'T17:00:00':'',tags:document.getElementById('new-task-tags').value})});toggleEl('add-task-form');['new-task-title','new-task-desc','new-task-tags','new-task-due'].forEach(id=>document.getElementById(id).value='');loadTasks();loadStats()}
+async function cycleTaskStatus(id,cur){const next={todo:'in_progress',in_progress:'done',done:'todo'};await fetch(`/api/tasks/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:next[cur]||'todo'})});loadTasks()}
+async function deleteTask(id){if(!confirm('Delete task?'))return;await fetch(`/api/tasks/${id}`,{method:'DELETE'});loadTasks();loadStats()}
 
-async function submitTask() {
-    const title = document.getElementById('new-task-title').value.trim();
-    if (!title) return;
-    const body = {
-        title,
-        description: document.getElementById('new-task-desc').value,
-        priority: document.getElementById('new-task-priority').value,
-        due_date: document.getElementById('new-task-due').value ? document.getElementById('new-task-due').value + 'T17:00:00' : '',
-        tags: document.getElementById('new-task-tags').value,
-    };
-    try {
-        await fetch('/api/tasks', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-        toggleAddTask();
-        document.getElementById('new-task-title').value = '';
-        document.getElementById('new-task-desc').value = '';
-        document.getElementById('new-task-tags').value = '';
-        document.getElementById('new-task-due').value = '';
-        loadTasks();
-        loadStats();
-    } catch(e) { alert('Failed to create task'); }
-}
+async function loadTasks(){
+    const s=document.getElementById('task-filter-status').value,p=document.getElementById('task-filter-priority').value;
+    const params=new URLSearchParams();if(s)params.set('status',s);if(p)params.set('priority',p);
+    try{const r=await fetch('/api/tasks?'+params);const tasks=await r.json();const el=document.getElementById('tasks-list');
+    if(!tasks.length){el.innerHTML='<div class="text-slate-500 text-xs py-4 text-center">No tasks found</div>';return}
+    el.innerHTML=tasks.map(t=>{const sc={todo:'bg-slate-600',in_progress:'bg-amber-600',done:'bg-emerald-600'};const pc={high:'text-red-400',medium:'text-amber-400',low:'text-slate-400'};const m=t.momentum||50;const mc=m>70?'#10B981':m>40?'#F59E0B':'#EF4444';
+    return`<div class="card px-3.5 py-2.5 flex items-center justify-between group card-hover transition"><div class="flex items-center gap-2.5"><button onclick="cycleTaskStatus(${t.id},'${t.status}')" class="text-[10px] px-2 py-0.5 rounded ${sc[t.status]||'bg-slate-600'} text-white hover:opacity-80 cursor-pointer transition">${t.status}</button><div><div class="text-xs text-white font-medium ${t.status==='done'?'line-through opacity-50':''}">${esc(t.title)}</div>${t.description?`<div class="text-[10px] text-slate-500 mt-0.5">${esc(t.description.slice(0,70))}</div>`:''}</div></div><div class="flex items-center gap-2.5 text-[10px]">${t.status!=='done'?`<div class="flex items-center gap-1" title="Momentum: ${m}%"><div class="w-10 h-1 rounded-full bg-slate-700 overflow-hidden"><div class="h-full rounded-full" style="width:${m}%;background:${mc}"></div></div><span style="color:${mc}">${m}%</span></div>`:''}<span class="${pc[t.priority]||''}">${t.priority}</span>${t.due_date?`<span class="text-slate-500">${new Date(t.due_date).toLocaleDateString()}</span>`:''}<button onclick="deleteTask(${t.id})" class="text-slate-700 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></div></div>`}).join('')}catch(e){document.getElementById('tasks-list').innerHTML='<div class="text-red-400 text-xs">Failed to load tasks</div>'}}
 
-async function submitNote() {
-    const title = document.getElementById('new-note-title').value.trim();
-    if (!title) return;
-    const body = {
-        title,
-        content: document.getElementById('new-note-content').value,
-        tags: document.getElementById('new-note-tags').value,
-    };
-    try {
-        await fetch('/api/notes', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
-        toggleAddNote();
-        document.getElementById('new-note-title').value = '';
-        document.getElementById('new-note-content').value = '';
-        document.getElementById('new-note-tags').value = '';
-        loadNotes();
-        loadStats();
-    } catch(e) { alert('Failed to create note'); }
-}
+// ═══ Notes CRUD ═══
+async function submitNote(){const t=document.getElementById('new-note-title').value.trim();if(!t)return;await fetch('/api/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t,content:document.getElementById('new-note-content').value,tags:document.getElementById('new-note-tags').value})});toggleEl('add-note-form');['new-note-title','new-note-content','new-note-tags'].forEach(id=>document.getElementById(id).value='');loadNotes();loadStats()}
 
-async function cycleTaskStatus(id, current) {
-    const next = { todo: 'in_progress', in_progress: 'done', done: 'todo' };
-    try {
-        await fetch(`/api/tasks/${id}`, { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ status: next[current] || 'todo' }) });
-        loadTasks();
-    } catch(e) {}
-}
+async function loadNotes(){try{const r=await fetch('/api/notes');const notes=await r.json();const el=document.getElementById('notes-list');if(!notes.length){el.innerHTML='<div class="text-slate-500 text-xs py-4 text-center">No notes</div>';return}el.innerHTML=notes.map(n=>`<div class="card px-3.5 py-3 card-hover transition"><div class="flex items-center justify-between mb-1.5"><span class="text-xs text-white font-medium">${esc(n.title)}</span><div class="flex gap-1.5">${n.linked_task_id?`<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-300">Task #${n.linked_task_id}</span>`:''}${(n.tags||[]).map(t=>`<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">${esc(t)}</span>`).join('')}</div></div><pre class="text-[11px] text-slate-400 whitespace-pre-wrap font-sans leading-relaxed">${esc((n.content||'').slice(0,300))}${(n.content||'').length>300?'...':''}</pre></div>`).join('')}catch(e){document.getElementById('notes-list').innerHTML='<div class="text-red-400 text-xs">Failed</div>'}}
 
-async function deleteTask(id) {
-    if (!confirm('Delete this task?')) return;
-    try {
-        await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
-        loadTasks();
-        loadStats();
-    } catch(e) {}
-}
+// ═══ History + Agent Stats ═══
+async function loadHistory(){try{const r=await fetch('/api/history');const s=await r.json();const el=document.getElementById('history-list');if(!s.length){el.innerHTML='<div class="text-slate-500 text-xs py-4 text-center">No sessions yet</div>';return}el.innerHTML=s.map(s=>{let m='';try{const p=typeof s.merged_result==='string'?JSON.parse(s.merged_result):s.merged_result;m=p?.merged_response||JSON.stringify(p).slice(0,150)}catch{m=String(s.merged_result||'').slice(0,150)};return`<div class="card px-3.5 py-2.5 card-hover transition"><div class="flex items-center justify-between mb-1"><span class="text-xs text-white font-medium">${esc(s.user_request)}</span><span class="text-[10px] text-slate-500">${new Date(s.created_at).toLocaleString()}</span></div><div class="text-[11px] text-slate-400 line-clamp-2">${esc(m)}</div></div>`}).join('')}catch(e){}}
 
-// ── Tasks View ──
-async function loadTasks() {
-    const status = document.getElementById('task-filter-status').value;
-    const priority = document.getElementById('task-filter-priority').value;
-    const params = new URLSearchParams();
-    if (status) params.set('status', status);
-    if (priority) params.set('priority', priority);
-    try {
-        const res = await fetch('/api/tasks?' + params);
-        const tasks = await res.json();
-        const el = document.getElementById('tasks-list');
-        if (!tasks.length) {
-            el.innerHTML = '<div class="text-slate-500 text-sm">No tasks found</div>';
-            return;
-        }
-        el.innerHTML = tasks.map(t => {
-            const statusColors = { todo: 'bg-slate-600', in_progress: 'bg-amber-600', done: 'bg-emerald-600' };
-            const prioColors = { high: 'text-red-400', medium: 'text-amber-400', low: 'text-slate-400' };
-            const m = t.momentum || 50;
-            const mColor = m > 70 ? '#10B981' : m > 40 ? '#F59E0B' : '#EF4444';
-            const mTrend = { active: 'Active', stable: 'Stable', declining: 'Declining', stale: 'Stale', completed: 'Done', unknown: '' };
-            return `<div class="glass rounded-lg px-4 py-3 flex items-center justify-between group">
-                <div class="flex items-center gap-3">
-                    <button onclick="cycleTaskStatus(${t.id},'${t.status}')" title="Click to change status" class="text-xs px-2 py-0.5 rounded ${statusColors[t.status] || 'bg-slate-600'} text-white hover:opacity-80 transition cursor-pointer">${t.status}</button>
-                    <div>
-                        <div class="text-sm text-white font-medium ${t.status === 'done' ? 'line-through opacity-60' : ''}">${esc(t.title)}</div>
-                        <div class="text-xs text-slate-500">${t.description ? esc(t.description.slice(0, 80)) : ''}</div>
-                    </div>
-                </div>
-                <div class="flex items-center gap-3 text-xs">
-                    ${t.status !== 'done' ? `<div class="flex items-center gap-1" title="Momentum: ${m}% (${mTrend[t.momentum_trend] || ''})">
-                        <div class="w-12 h-1.5 rounded-full bg-slate-700 overflow-hidden"><div class="h-full rounded-full" style="width:${m}%;background:${mColor}"></div></div>
-                        <span class="text-[10px]" style="color:${mColor}">${m}%</span>
-                    </div>` : ''}
-                    ${t.tags?.map(tag => `<span class="px-2 py-0.5 rounded bg-slate-800 text-slate-400">${esc(tag)}</span>`).join('') || ''}
-                    <span class="${prioColors[t.priority] || ''}">${t.priority}</span>
-                    ${t.due_date ? `<span class="text-slate-500">${new Date(t.due_date).toLocaleDateString()}</span>` : ''}
-                    <span class="text-slate-600 text-[10px]">${t.created_by}</span>
-                    <button onclick="deleteTask(${t.id})" class="text-slate-700 hover:text-red-400 transition opacity-0 group-hover:opacity-100" title="Delete">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                    </button>
-                </div>
-            </div>`;
-        }).join('');
-    } catch(e) {
-        document.getElementById('tasks-list').innerHTML = '<div class="text-red-400 text-sm">Failed to load tasks</div>';
-    }
-}
+async function loadAgentStats(){try{const r=await fetch('/api/agent-stats');const d=await r.json();const el=document.getElementById('perf-chart');const empty=document.getElementById('perf-empty');const agents=[{k:'red',l:'Red',c:'#EF4444'},{k:'blue',l:'Blue',c:'#3B82F6'},{k:'green',l:'Green',c:'#10B981'}];if(!agents.some(a=>(d[a.k]?.total||0)>0)){el.classList.add('hidden');empty.classList.remove('hidden');return}el.classList.remove('hidden');empty.classList.add('hidden');const mx=Math.max(...agents.map(a=>d[a.k]?.total||0),1);el.innerHTML=agents.map(a=>{const v=d[a.k]||{selected:0,total:0,avg_time_ms:0,win_rate:0};const h=Math.max((v.total/mx)*100,10);const sh=v.total>0?(v.selected/mx)*100:0;return`<div class="flex flex-col items-center gap-1.5 flex-1"><div class="text-xs font-bold" style="color:${a.c}">${v.win_rate||0}%</div><div class="w-full flex justify-center" style="height:130px"><div class="relative w-full max-w-[50px] rounded-t-md overflow-hidden" style="height:${h}%;background:${a.c}15;border:1px solid ${a.c}30"><div class="absolute bottom-0 left-0 right-0" style="height:${h>0?sh/h*100:0}%;background:${a.c};opacity:0.6"></div></div></div><div class="text-[11px] font-semibold" style="color:${a.c}">${a.l}</div><div class="text-[10px] text-slate-500">${v.selected}/${v.total}</div></div>`}).join('')}catch(e){}}
 
-// ── Notes View ──
-async function loadNotes() {
-    try {
-        const res = await fetch('/api/notes');
-        const notes = await res.json();
-        const el = document.getElementById('notes-list');
-        if (!notes.length) {
-            el.innerHTML = '<div class="text-slate-500 text-sm">No notes found</div>';
-            return;
-        }
-        el.innerHTML = notes.map(n => `<div class="glass rounded-lg px-4 py-3">
-            <div class="flex items-center justify-between mb-2">
-                <span class="text-sm text-white font-medium">${esc(n.title)}</span>
-                <div class="flex items-center gap-2">
-                    ${n.linked_task_id ? `<span class="text-xs px-2 py-0.5 rounded bg-blue-900/50 text-blue-300">Task #${n.linked_task_id}</span>` : ''}
-                    ${n.tags?.map(tag => `<span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400">${esc(tag)}</span>`).join('') || ''}
-                    <span class="text-slate-600 text-[10px]">${n.created_by}</span>
-                </div>
-            </div>
-            <pre class="text-xs text-slate-400 whitespace-pre-wrap font-sans">${esc(n.content?.slice(0, 400) || '')}${n.content?.length > 400 ? '...' : ''}</pre>
-        </div>`).join('');
-    } catch(e) {
-        document.getElementById('notes-list').innerHTML = '<div class="text-red-400 text-sm">Failed to load notes</div>';
-    }
-}
+// ═══ Workflows ═══
+let _wfEs=null;
+async function loadWorkflows(){try{const r=await fetch('/api/workflows');const d=await r.json();document.getElementById('workflow-cards').innerHTML=Object.entries(d).map(([id,w])=>`<div class="card p-4 card-hover transition cursor-pointer" onclick="runWorkflow('${id}')"><div class="text-sm font-semibold text-white mb-1">${esc(w.name)}</div><div class="text-[11px] text-slate-400 mb-2">${esc(w.description)}</div><div class="text-[10px] text-indigo-400">${w.steps} steps</div></div>`).join('')}catch(e){}}
+function runWorkflow(id){document.getElementById('workflow-cards').classList.add('hidden');document.getElementById('workflow-exec').classList.remove('hidden');document.getElementById('workflow-timeline').innerHTML='';_wfEs=new EventSource('/api/workflows/'+id+'/run');
+    _wfEs.addEventListener('workflow_step_start',(e)=>{const d=JSON.parse(e.data);document.getElementById('workflow-exec-title').textContent=`Step ${d.step+1}/${d.total_steps}: ${d.label}`;const el=document.createElement('div');el.id='wf-step-'+d.step;el.className='card overflow-hidden fade-up';el.innerHTML=`<div class="px-3.5 py-2 border-b border-slate-800/50 flex items-center justify-between"><div class="flex items-center gap-2"><span class="w-5 h-5 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center text-[10px] font-bold">${d.step+1}</span><span class="text-xs font-medium text-white">${esc(d.label)}</span></div><span class="w-3 h-3 border border-indigo-400/30 border-t-indigo-400 rounded-full spin inline-block"></span></div><div class="px-3.5 py-1.5 text-[10px] text-slate-500">${esc(d.query)}</div><div id="wf-result-${d.step}" class="hidden px-3.5 py-2.5 text-xs text-slate-300"></div>`;document.getElementById('workflow-timeline').appendChild(el);el.scrollIntoView({behavior:'smooth',block:'nearest'})});
+    _wfEs.addEventListener('workflow_step_done',(e)=>{const d=JSON.parse(e.data);const el=document.getElementById('wf-step-'+d.step);el.querySelector('span:last-child').outerHTML='<span class="text-emerald-400 text-[10px]">Done</span>';const r=document.getElementById('wf-result-'+d.step);r.innerHTML=fmt(d.result?.merged?.merged_response||'No result');r.classList.remove('hidden');r.classList.add('fade-up')});
+    _wfEs.addEventListener('workflow_complete',(e)=>{const d=JSON.parse(e.data);document.getElementById('workflow-exec-title').textContent=`${d.workflow} — Complete`;_wfEs.close();_wfEs=null;loadStats()});
+    _wfEs.addEventListener('workflow_error',(e)=>{const d=JSON.parse(e.data);document.getElementById('workflow-timeline').innerHTML+=`<div class="card px-3.5 py-2.5 text-red-400 text-xs">${esc(d.message)}</div>`;_wfEs.close();_wfEs=null});
+    _wfEs.onerror=()=>{if(_wfEs){_wfEs.close();_wfEs=null}}}
+function cancelWorkflow(){if(_wfEs){_wfEs.close();_wfEs=null}document.getElementById('workflow-exec').classList.add('hidden');document.getElementById('workflow-cards').classList.remove('hidden')}
 
-// ── History View ──
-async function loadHistory() {
-    try {
-        const res = await fetch('/api/history');
-        const sessions = await res.json();
-        const el = document.getElementById('history-list');
-        if (!sessions.length) {
-            el.innerHTML = '<div class="text-slate-500 text-sm">No sessions yet. Run your first Prism query!</div>';
-            return;
-        }
-        el.innerHTML = sessions.map(s => {
-            let merged = '';
-            try {
-                const m = typeof s.merged_result === 'string' ? JSON.parse(s.merged_result) : s.merged_result;
-                merged = m?.merged_response || JSON.stringify(m).slice(0, 200);
-            } catch { merged = String(s.merged_result || '').slice(0, 200); }
-            return `<div class="glass rounded-lg px-4 py-3">
-                <div class="flex items-center justify-between mb-1">
-                    <span class="text-sm text-white font-medium">${esc(s.user_request)}</span>
-                    <span class="text-xs text-slate-500">${new Date(s.created_at).toLocaleString()}</span>
-                </div>
-                <div class="text-xs text-slate-400">${esc(merged)}</div>
-            </div>`;
-        }).join('');
-    } catch(e) {
-        document.getElementById('history-list').innerHTML = '<div class="text-red-400 text-sm">Failed to load history</div>';
-    }
-}
-
-// ── Helpers ──
-function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
-function truncArgs(args) {
-    const s = JSON.stringify(args || {});
-    return s.length > 60 ? s.slice(0, 60) + '...' : s;
-}
-function formatResponse(text) {
-    if (!text) return '';
-    return text.split('\n').map(line => {
-        line = esc(line);
-        if (line.startsWith('**') && line.endsWith('**')) return `<div class="font-semibold text-white mt-2">${line.slice(2, -2)}</div>`;
-        if (line.startsWith('- ') || line.startsWith('* ')) return `<div class="ml-3 before:content-[''] before:mr-2 before:text-slate-500">${line}</div>`;
-        if (line.match(/^\d+\./)) return `<div class="ml-3">${line}</div>`;
-        if (!line.trim()) return '<div class="h-2"></div>';
-        return `<div>${line}</div>`;
-    }).join('');
-}
-
-// ── Agent Performance Chart ──
-async function loadAgentStats() {
-    try {
-        const res = await fetch('/api/agent-stats');
-        const data = await res.json();
-        const chartEl = document.getElementById('perf-chart');
-        const legendEl = document.getElementById('perf-legend');
-        const emptyEl = document.getElementById('perf-empty');
-
-        const agents = [
-            { key: 'red', label: 'Red (Speed)', color: '#EF4444', bg: 'rgba(239,68,68,0.2)', border: 'rgba(239,68,68,0.5)' },
-            { key: 'blue', label: 'Blue (Depth)', color: '#3B82F6', bg: 'rgba(59,130,246,0.2)', border: 'rgba(59,130,246,0.5)' },
-            { key: 'green', label: 'Green (Creative)', color: '#10B981', bg: 'rgba(16,185,129,0.2)', border: 'rgba(16,185,129,0.5)' },
-        ];
-
-        const hasData = agents.some(a => (data[a.key]?.total || 0) > 0);
-        if (!hasData) {
-            chartEl.classList.add('hidden');
-            legendEl.classList.add('hidden');
-            emptyEl.classList.remove('hidden');
-            return;
-        }
-        chartEl.classList.remove('hidden');
-        legendEl.classList.remove('hidden');
-        emptyEl.classList.add('hidden');
-
-        const maxTotal = Math.max(...agents.map(a => data[a.key]?.total || 0), 1);
-
-        chartEl.innerHTML = agents.map(a => {
-            const d = data[a.key] || { selected: 0, total: 0, avg_time_ms: 0, win_rate: 0 };
-            const totalH = Math.max((d.total / maxTotal) * 100, 8);
-            const selH = d.total > 0 ? Math.max((d.selected / maxTotal) * 100, 4) : 0;
-            return `<div class="flex flex-col items-center gap-2 flex-1">
-                <div class="text-xs font-bold" style="color:${a.color}">${d.win_rate || 0}%</div>
-                <div class="w-full flex flex-col items-center justify-end" style="height:160px">
-                    <div class="relative w-full max-w-[60px] rounded-t-lg overflow-hidden" style="height:${totalH}%;background:${a.bg};border:1px solid ${a.border}">
-                        <div class="absolute bottom-0 left-0 right-0 rounded-t-sm" style="height:${selH / totalH * 100}%;background:${a.color};opacity:0.7"></div>
-                    </div>
-                </div>
-                <div class="text-[11px] font-medium" style="color:${a.color}">${a.label.split(' ')[0]}</div>
-                <div class="text-[10px] text-slate-500">${d.selected}/${d.total} wins</div>
-                <div class="text-[10px] text-slate-600">${d.avg_time_ms ? (d.avg_time_ms/1000).toFixed(1)+'s avg' : ''}</div>
-            </div>`;
-        }).join('');
-
-        legendEl.innerHTML = `<div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded-sm" style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2)"></div> Total sessions</div>
-            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded-sm" style="background:rgba(255,255,255,0.4)"></div> Selected by orchestrator</div>`;
-
-    } catch(e) { console.error('Failed to load agent stats', e); }
-}
-
-// ── Connections ──
-async function loadConnections() {
-    try {
-        const res = await fetch('/api/connections');
-        const data = await res.json();
-        const el = document.getElementById('connections-bar');
-        const icons = { tasks: 'T', notes: 'N', calendar: 'C', email: 'E' };
-        const labels = { tasks: 'Tasks', notes: 'Notes', calendar: 'Calendar', email: 'Email' };
-        el.innerHTML = Object.entries(data).map(([key, info]) => {
-            const live = info.status === 'live';
-            return `<div class="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] ${live ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400' : 'bg-amber-500/10 border border-amber-500/30 text-amber-400'}">
-                <span class="w-1.5 h-1.5 rounded-full ${live ? 'bg-emerald-400' : 'bg-amber-400'}"></span>
-                <span class="font-medium">${labels[key]}</span>
-                <span class="text-slate-500">${info.backend}</span>
-            </div>`;
-        }).join('');
-    } catch(e) {}
-}
-
-// ── Workflows ──
-let _workflowEs = null;
-
-async function loadWorkflows() {
-    try {
-        const res = await fetch('/api/workflows');
-        const data = await res.json();
-        const el = document.getElementById('workflow-cards');
-        const icons = {
-            sunrise: '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>',
-            chart: '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>',
-            users: '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>',
-        };
-        el.innerHTML = Object.entries(data).map(([id, w]) => `
-            <div class="glass rounded-xl p-5 hover:border-slate-600 transition cursor-pointer group" onclick="runWorkflow('${id}')">
-                <div class="flex items-center gap-3 mb-3">
-                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500/20 to-blue-500/20 border border-violet-500/30 flex items-center justify-center text-violet-400">
-                        ${icons[w.icon] || icons.chart}
-                    </div>
-                    <div>
-                        <div class="text-sm font-semibold text-white group-hover:text-violet-300 transition">${esc(w.name)}</div>
-                        <div class="text-[11px] text-slate-500">${w.steps} steps</div>
-                    </div>
-                </div>
-                <p class="text-xs text-slate-400">${esc(w.description)}</p>
-            </div>
-        `).join('');
-    } catch(e) {
-        document.getElementById('workflow-cards').innerHTML = '<div class="text-red-400 text-sm">Failed to load workflows</div>';
-    }
-}
-
-function runWorkflow(id) {
-    document.getElementById('workflow-cards').classList.add('hidden');
-    const exec = document.getElementById('workflow-exec');
-    exec.classList.remove('hidden');
-    document.getElementById('workflow-timeline').innerHTML = '';
-
-    const url = '/api/workflows/' + id + '/run';
-    _workflowEs = new EventSource(url);
-
-    _workflowEs.addEventListener('workflow_step_start', (e) => {
-        const data = JSON.parse(e.data);
-        document.getElementById('workflow-exec-title').textContent = `Running: Step ${data.step + 1}/${data.total_steps}`;
-        const timeline = document.getElementById('workflow-timeline');
-        const stepEl = document.createElement('div');
-        stepEl.id = 'wf-step-' + data.step;
-        stepEl.className = 'glass rounded-xl overflow-hidden fade-in';
-        stepEl.innerHTML = `
-            <div class="px-4 py-3 border-b border-slate-700/50 flex items-center justify-between" style="background:rgba(139,92,246,0.08)">
-                <div class="flex items-center gap-2">
-                    <span class="w-6 h-6 rounded-full bg-violet-500/20 border border-violet-500/40 text-violet-400 flex items-center justify-center text-xs font-bold">${data.step + 1}</span>
-                    <span class="text-sm font-medium text-violet-300">${esc(data.label)}</span>
-                </div>
-                <span class="spinner" style="border-top-color:#8b5cf6"></span>
-            </div>
-            <div class="px-4 py-2 text-xs text-slate-500">${esc(data.query)}</div>
-            <div id="wf-step-result-${data.step}" class="px-4 py-3 text-sm text-slate-300 hidden"></div>
-        `;
-        timeline.appendChild(stepEl);
-        stepEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-
-    _workflowEs.addEventListener('workflow_step_done', (e) => {
-        const data = JSON.parse(e.data);
-        const stepEl = document.getElementById('wf-step-' + data.step);
-        // Update header status
-        const header = stepEl.querySelector('div:first-child');
-        header.querySelector('span:last-child').outerHTML = '<span class="text-emerald-400 text-xs">Done</span>';
-        // Show result
-        const resultEl = document.getElementById('wf-step-result-' + data.step);
-        const merged = data.result?.merged?.merged_response || 'No result';
-        resultEl.innerHTML = formatResponse(merged);
-        resultEl.classList.remove('hidden');
-        resultEl.classList.add('fade-in');
-    });
-
-    _workflowEs.addEventListener('workflow_complete', (e) => {
-        const data = JSON.parse(e.data);
-        document.getElementById('workflow-exec-title').textContent = `${data.workflow} — Complete (${data.steps_completed} steps)`;
-        _workflowEs.close();
-        _workflowEs = null;
-        loadStats();
-    });
-
-    _workflowEs.addEventListener('workflow_error', (e) => {
-        const data = JSON.parse(e.data);
-        document.getElementById('workflow-exec-title').textContent = 'Workflow Error';
-        const timeline = document.getElementById('workflow-timeline');
-        timeline.innerHTML += `<div class="glass rounded-lg px-4 py-3 text-red-400 text-sm">${esc(data.message)}</div>`;
-        _workflowEs.close();
-        _workflowEs = null;
-    });
-
-    _workflowEs.onerror = () => { if (_workflowEs) { _workflowEs.close(); _workflowEs = null; } };
-}
-
-function cancelWorkflow() {
-    if (_workflowEs) { _workflowEs.close(); _workflowEs = null; }
-    document.getElementById('workflow-exec').classList.add('hidden');
-    document.getElementById('workflow-cards').classList.remove('hidden');
-}
-
-// ── Init ──
-loadStats();
-loadConnections();
+// ═══ Init ═══
+loadStats();loadConnections();
 </script>
 </body>
 </html>

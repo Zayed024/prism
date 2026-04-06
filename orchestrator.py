@@ -154,8 +154,9 @@ class Orchestrator:
 
         print(f"[Prism] ADK agents initialized (model: {self.model})")
 
-    async def run(self, request: str, callback=None) -> dict:
-        """Full Prism pipeline: context → agents → negotiation → merge → contrarian."""
+    async def run(self, request: str, callback=None, deep_analysis: bool = False) -> dict:
+        """Prism pipeline. Default: Context → Agents → Merge (fast).
+        With deep_analysis=True: adds Negotiation + Contrarian (thorough but slower)."""
         now = datetime.now()
         tomorrow = now + timedelta(days=1)
         audit = PrismAudit(model=self.model)
@@ -219,20 +220,19 @@ class Orchestrator:
                     "error": result.error,
                 })
 
-        # ── Phase 3: Agent Negotiation ────────────────────────
-        await asyncio.sleep(2)
-
-        if callback:
-            await callback({"type": "negotiation_start", "message": "Agents reviewing each other's work..."})
-
-        neg_start = _time.time()
-        negotiations = await self._negotiate(request, red_result, blue_result, green_result)
-        audit.log("negotiation", "orchestrator", "llm_generate", "3 agents exchanged feedback",
-                  input_text=request, output_text=json.dumps(negotiations)[:200],
-                  latency_ms=int((_time.time()-neg_start)*1000))
-
-        if callback:
-            await callback({"type": "negotiation_done", "negotiations": negotiations})
+        # ── Phase 3 (optional): Agent Negotiation ─────────────
+        negotiations = {}
+        if deep_analysis:
+            await asyncio.sleep(2)
+            if callback:
+                await callback({"type": "negotiation_start", "message": "Agents reviewing each other's work..."})
+            neg_start = _time.time()
+            negotiations = await self._negotiate(request, red_result, blue_result, green_result)
+            audit.log("negotiation", "orchestrator", "llm_generate", "3 agents exchanged feedback",
+                      input_text=request, output_text=json.dumps(negotiations)[:200],
+                      latency_ms=int((_time.time()-neg_start)*1000))
+            if callback:
+                await callback({"type": "negotiation_done", "negotiations": negotiations})
 
         # ── Phase 4: Merge ────────────────────────────────────
         await asyncio.sleep(2)
@@ -246,25 +246,24 @@ class Orchestrator:
                   input_text=request, output_text=json.dumps(merged)[:300],
                   latency_ms=int((_time.time()-merge_start)*1000))
 
-        # ── Phase 5: Contrarian View ─────────────────────────
+        # ── Phase 5 (optional): Contrarian View ──────────────
         contrarian = ""
-        merged_text = merged.get("merged_response", "")
-        if merged_text and not merged_text.startswith("Merge failed"):
-            try:
-                await asyncio.sleep(1)
-                if callback:
-                    await callback({"type": "contrarian_start"})
-                ct_start = _time.time()
-                prompt = CONTRARIAN_PROMPT.format(merged_response=merged_text[:800])
-                response = await self.merger.generate([{"role": "user", "parts": [prompt]}])
-                contrarian = GeminiAgent.extract_text(response)
-                audit.log("contrarian", "orchestrator", "llm_generate", f"Contrarian: {contrarian[:80]}",
-                          input_text=prompt, output_text=contrarian,
-                          latency_ms=int((_time.time()-ct_start)*1000))
-            except Exception as e:
-                contrarian = ""
-                audit.log("contrarian", "orchestrator", "llm_generate", f"Skipped: {str(e)[:80]}",
-                          status="skipped")
+        if deep_analysis:
+            merged_text = merged.get("merged_response", "")
+            if merged_text and not merged_text.startswith("Merge failed"):
+                try:
+                    await asyncio.sleep(1)
+                    if callback:
+                        await callback({"type": "contrarian_start"})
+                    ct_start = _time.time()
+                    prompt = CONTRARIAN_PROMPT.format(merged_response=merged_text[:800])
+                    response = await self.merger.generate([{"role": "user", "parts": [prompt]}])
+                    contrarian = GeminiAgent.extract_text(response)
+                    audit.log("contrarian", "orchestrator", "llm_generate", f"Contrarian: {contrarian[:80]}",
+                              input_text=prompt, output_text=contrarian,
+                              latency_ms=int((_time.time()-ct_start)*1000))
+                except Exception as e:
+                    contrarian = ""
 
         merged["contrarian_view"] = contrarian
 

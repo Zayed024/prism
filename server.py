@@ -221,8 +221,8 @@ async def run_workflow(workflow_id: str):
 # ── Main Prism Endpoint (SSE) ─────────────────────────────────
 
 @app.get("/api/prism")
-async def prism_sse(query: str):
-    """Run Prism via SSE — 3 ADK agents in parallel, merged result."""
+async def prism_sse(query: str, deep: bool = False):
+    """Run Prism via SSE. Add ?deep=true for negotiation + contrarian analysis."""
     queue: asyncio.Queue = asyncio.Queue()
 
     async def callback(event: dict):
@@ -230,7 +230,7 @@ async def prism_sse(query: str):
 
     async def run_orchestrator():
         try:
-            result = await _orchestrator.run(query, callback=callback)
+            result = await _orchestrator.run(query, callback=callback, deep_analysis=deep)
             # Save session + performance to DB
             if _db_pool:
                 try:
