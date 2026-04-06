@@ -37,7 +37,7 @@ class GeminiAgent:
         self.model_name = model
         self.system_prompt = system_prompt
 
-    async def generate(self, contents: list, tools=None, max_retries: int = 3):
+    async def generate(self, contents: list, tools=None, max_retries: int = 5):
         """Call Gemini with contents and optional tools. Retries on rate limit."""
         # Convert our simple format to genai Content objects
         genai_contents = []
@@ -69,8 +69,8 @@ class GeminiAgent:
                 )
                 return response
             except Exception as e:
-                if "429" in str(e) and attempt < max_retries - 1:
-                    wait = 2 ** (attempt + 1)
+                if ("429" in str(e) or "RESOURCE_EXHAUSTED" in str(e)) and attempt < max_retries - 1:
+                    wait = 3 * (attempt + 1)  # 3, 6, 9, 12, 15 seconds
                     print(f"[Gemini] Rate limited, retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
                     await asyncio.sleep(wait)
                 else:

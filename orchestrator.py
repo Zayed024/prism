@@ -150,6 +150,9 @@ class Orchestrator:
                     "error": result.error,
                 })
 
+        # Brief pause before merge to avoid rate limits after parallel agent calls
+        await asyncio.sleep(3)
+
         # Merge phase
         if callback:
             await callback({"type": "merge_start"})
