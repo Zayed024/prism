@@ -283,6 +283,28 @@ class Orchestrator:
             "audit": audit.summary(),
         }
 
+    async def run_lite(self, request: str) -> dict:
+        """Lightweight single-agent run for workflows. Uses Blue (Depth) agent only.
+        Avoids parallel execution, negotiation, and merge to minimize API calls."""
+        now = datetime.now()
+        tomorrow = now + timedelta(days=1)
+
+        enriched = f"[Current date: {now.strftime('%Y-%m-%d')} ({now.strftime('%A')}). Tomorrow: {tomorrow.strftime('%Y-%m-%d')} ({tomorrow.strftime('%A')}).]"
+
+        # Quick context gather
+        smart_context = await self._gather_context(request)
+        if smart_context:
+            enriched += f"\n\n[Context:\n{smart_context}]"
+        enriched += f"\n\n{request}"
+
+        # Run single agent (Blue — most thorough for multi-step workflows)
+        result = await self._run_agent(self._blue, "blue", "#3B82F6", enriched)
+
+        return {
+            "merged": {"merged_response": result.response or result.error or "No result"},
+            "agents": {"blue": self._result_to_dict(result)},
+        }
+
     async def _gather_context(self, request: str) -> str:
         """Use MCP semantic search to find relevant tasks and notes."""
         if not self._mcp_clients:

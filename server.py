@@ -174,8 +174,8 @@ async def run_workflow(workflow_id: str):
                     )
                     enriched_query = f"Context from previous steps:\n{prev_context}\n\nCurrent task: {step['query']}"
 
-                # Run Prism for this step
-                result = await _orchestrator.run(enriched_query)
+                # Run lightweight single-agent step (avoids rate limits)
+                result = await _orchestrator.run_lite(enriched_query)
                 merged = result.get("merged", {})
                 summary = merged.get("merged_response", "No result")
 
@@ -191,9 +191,9 @@ async def run_workflow(workflow_id: str):
                     },
                 })
 
-                # Brief pause between steps
+                # Pause between steps to avoid rate limits
                 if i < len(workflow["steps"]) - 1:
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(3)
 
             await queue.put({
                 "type": "workflow_complete",
