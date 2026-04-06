@@ -13,11 +13,14 @@ DB_USER="postgres"
 DB_PASSWORD="YOUR_PASSWORD"  # <-- Replace with actual password
 DB_NAME="postgres"
 
-# Gemini config
-GEMINI_API_KEY="YOUR_GEMINI_API_KEY"  # <-- Replace with actual key
+# Gemini config — use Vertex AI on Cloud Run for higher rate limits
 GEMINI_MODEL="gemini-2.5-flash"
 
 DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${ALLOYDB_IP}:5432/${DB_NAME}"
+
+# Enable Vertex AI API
+echo "==> Enabling Vertex AI API..."
+gcloud services enable aiplatform.googleapis.com --project="$PROJECT_ID"
 
 # ── DEPLOY ──────────────────────────────────────────────────
 echo "==> Deploying Prism to Cloud Run..."
@@ -29,7 +32,7 @@ gcloud run deploy "$SERVICE_NAME" \
     --platform=managed \
     --allow-unauthenticated \
     --vpc-connector="$VPC_CONNECTOR" \
-    --set-env-vars="DATABASE_URL=${DATABASE_URL},GEMINI_API_KEY=${GEMINI_API_KEY},GEMINI_MODEL=${GEMINI_MODEL}" \
+    --set-env-vars="DATABASE_URL=${DATABASE_URL},GEMINI_MODEL=${GEMINI_MODEL},GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${REGION}" \
     --memory=1Gi \
     --cpu=2 \
     --min-instances=0 \
