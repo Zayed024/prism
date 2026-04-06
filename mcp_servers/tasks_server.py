@@ -73,7 +73,7 @@ async def create_task(
     due = due_date if due_date else None
 
     if _use_db:
-        pool = ctx.request_context.lifespan_context["pool"]
+        pool = _pool
         due_dt = datetime.fromisoformat(due_date) if due_date else None
         row = await pool.fetchrow(
             """INSERT INTO tasks (title, description, priority, due_date, tags, created_by)
@@ -99,7 +99,7 @@ async def list_tasks(
     ctx=None,
 ) -> str:
     if _use_db:
-        pool = ctx.request_context.lifespan_context["pool"]
+        pool = _pool
         query = "SELECT * FROM tasks WHERE 1=1"
         params = []
         idx = 1
@@ -125,7 +125,7 @@ async def get_task(
     ctx=None,
 ) -> str:
     if _use_db:
-        pool = ctx.request_context.lifespan_context["pool"]
+        pool = _pool
         row = await pool.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
         if not row: return json.dumps({"error": f"Task {task_id} not found"})
         return json.dumps(_row_to_dict(row), default=str)
@@ -145,7 +145,7 @@ async def update_task(
     ctx=None,
 ) -> str:
     if _use_db:
-        pool = ctx.request_context.lifespan_context["pool"]
+        pool = _pool
         sets, params, idx = [], [], 1
         if status: sets.append(f"status = ${idx}"); params.append(status); idx += 1
         if priority: sets.append(f"priority = ${idx}"); params.append(priority); idx += 1
@@ -174,7 +174,7 @@ async def delete_task(
     ctx=None,
 ) -> str:
     if _use_db:
-        pool = ctx.request_context.lifespan_context["pool"]
+        pool = _pool
         row = await pool.fetchrow("DELETE FROM tasks WHERE id = $1 RETURNING id, title", task_id)
         if not row: return json.dumps({"error": f"Task {task_id} not found"})
         return json.dumps({"deleted": _row_to_dict(row)}, default=str)
@@ -192,7 +192,7 @@ async def search_tasks(
     ctx=None,
 ) -> str:
     if _use_db:
-        pool = ctx.request_context.lifespan_context["pool"]
+        pool = _pool
         rows = await pool.fetch(
             "SELECT * FROM tasks WHERE title ILIKE $1 OR description ILIKE $1 ORDER BY created_at DESC LIMIT 20",
             f"%{query}%",
@@ -211,7 +211,7 @@ async def semantic_search_tasks(
     ctx=None,
 ) -> str:
     if _use_db:
-        pool = ctx.request_context.lifespan_context["pool"]
+        pool = _pool
         try:
             rows = await pool.fetch(
                 "SELECT * FROM semantic_search_tasks($1, $2)",

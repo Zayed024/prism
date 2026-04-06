@@ -67,7 +67,7 @@ async def create_note(
     link_id = linked_task_id if linked_task_id > 0 else None
 
     if _use_db:
-        pool = ctx.request_context.lifespan_context["pool"]
+        pool = _pool
         row = await pool.fetchrow(
             """INSERT INTO notes (title, content, tags, linked_task_id, created_by)
                VALUES ($1, $2, $3, $4, 'agent') RETURNING *""",
@@ -90,7 +90,7 @@ async def list_notes(
     ctx=None,
 ) -> str:
     if _use_db:
-        pool = ctx.request_context.lifespan_context["pool"]
+        pool = _pool
         if linked_task_id > 0:
             rows = await pool.fetch(
                 "SELECT * FROM notes WHERE linked_task_id = $1 ORDER BY created_at DESC LIMIT $2",
@@ -112,7 +112,7 @@ async def get_note(
     ctx=None,
 ) -> str:
     if _use_db:
-        pool = ctx.request_context.lifespan_context["pool"]
+        pool = _pool
         row = await pool.fetchrow("SELECT * FROM notes WHERE id = $1", note_id)
         if not row: return json.dumps({"error": f"Note {note_id} not found"})
         return json.dumps(_row_to_dict(row), default=str)
@@ -128,7 +128,7 @@ async def search_notes(
     ctx=None,
 ) -> str:
     if _use_db:
-        pool = ctx.request_context.lifespan_context["pool"]
+        pool = _pool
         rows = await pool.fetch(
             "SELECT * FROM notes WHERE title ILIKE $1 OR content ILIKE $1 ORDER BY created_at DESC LIMIT 20",
             f"%{query}%",
@@ -147,7 +147,7 @@ async def link_note_to_task(
     ctx=None,
 ) -> str:
     if _use_db:
-        pool = ctx.request_context.lifespan_context["pool"]
+        pool = _pool
         row = await pool.fetchrow(
             "UPDATE notes SET linked_task_id = $1 WHERE id = $2 RETURNING *",
             task_id, note_id,
@@ -168,7 +168,7 @@ async def semantic_search_notes(
     ctx=None,
 ) -> str:
     if _use_db:
-        pool = ctx.request_context.lifespan_context["pool"]
+        pool = _pool
         try:
             rows = await pool.fetch(
                 "SELECT * FROM semantic_search_notes($1, $2)",
