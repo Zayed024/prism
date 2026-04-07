@@ -71,13 +71,14 @@ Negotiation feedback: {green_negotiation}
 Respond in this JSON format:
 {{
     "merged_response": "Your merged summary — what was done and recommended",
+    "primary_agent": "red|blue|green — pick the ONE agent whose approach was MOST influential. Must be exactly one of these three values.",
     "contributions": [
-        {{"agent": "red", "kept": "what you kept from red", "reason": "why"}},
-        {{"agent": "blue", "kept": "what you kept from blue", "reason": "why"}},
-        {{"agent": "green", "kept": "what you kept from green", "reason": "why"}}
+        {{"agent": "red", "kept": "what you kept from red (or 'None' if nothing)", "reason": "why"}},
+        {{"agent": "blue", "kept": "what you kept from blue (or 'None' if nothing)", "reason": "why"}},
+        {{"agent": "green", "kept": "what you kept from green (or 'None' if nothing)", "reason": "why"}}
     ],
     "conflicts_resolved": "Any disagreements between agents and how they were resolved",
-    "verdict": "One sentence: which agent performed best and why"
+    "verdict": "One sentence: why the primary_agent performed best for THIS specific request"
 }}"""
 
 
@@ -167,18 +168,20 @@ class Orchestrator:
 
         import time as _time
         ctx_start = _time.time()
-        smart_context = await self._gather_context(request)
-        audit.log("context", "orchestrator", "semantic_search", f"Found context: {smart_context[:100]}",
-                  input_text=request, output_text=smart_context, latency_ms=int((_time.time()-ctx_start)*1000))
+        ctx_data = await self._gather_context(request)
+        audit.log("context", "orchestrator", "semantic_search",
+                  f"AlloyDB AI found {ctx_data['item_count']} items: {ctx_data['task_count']} tasks, {ctx_data['note_count']} notes",
+                  input_text=request, output_text=ctx_data["summary"],
+                  latency_ms=int((_time.time()-ctx_start)*1000))
 
         if callback:
-            await callback({"type": "context_done", "context": smart_context})
+            await callback({"type": "context_done", "context": ctx_data})
 
         # Build enriched prompt with date + context
         enriched = f"[Current date: {now.strftime('%Y-%m-%d')} ({now.strftime('%A')}). Tomorrow: {tomorrow.strftime('%Y-%m-%d')} ({tomorrow.strftime('%A')}).]"
-        if smart_context:
-            enriched += f"\n\n[Relevant context from your data:\n{smart_context}]"
-        enriched += f"\n\n{request}"
+        if ctx_data["summary"]:
+            enriched += f"\n\n## Pre-fetched relevant context (via AlloyDB AI semantic search)\nUse this context when relevant — these items already exist in the user's data:\n{ctx_data['summary']}"
+        enriched += f"\n\n## User request\n{request}"
 
         # ── Phase 2: Parallel Agent Execution ─────────────────
         if callback:
@@ -241,7 +244,7 @@ class Orchestrator:
             await callback({"type": "merge_start"})
 
         merge_start = _time.time()
-        merged = await self._merge(request, smart_context, red_result, blue_result, green_result, negotiations)
+        merged = await self._merge(request, ctx_data["summary"], red_result, blue_result, green_result, negotiations)
         audit.log("merge", "orchestrator", "llm_generate", f"Merged: {merged.get('merged_response', '')[:80]}",
                   input_text=request, output_text=json.dumps(merged)[:300],
                   latency_ms=int((_time.time()-merge_start)*1000))
@@ -278,7 +281,7 @@ class Orchestrator:
                 "green": self._result_to_dict(green_result),
             },
             "negotiations": negotiations,
-            "smart_context": smart_context,
+            "smart_context": ctx_data,
             "merged": merged,
             "audit": audit.summary(),
         }
@@ -291,13 +294,11 @@ class Orchestrator:
 
         enriched = f"[Current date: {now.strftime('%Y-%m-%d')} ({now.strftime('%A')}). Tomorrow: {tomorrow.strftime('%Y-%m-%d')} ({tomorrow.strftime('%A')}).]"
 
-        # Quick context gather
-        smart_context = await self._gather_context(request)
-        if smart_context:
-            enriched += f"\n\n[Context:\n{smart_context}]"
-        enriched += f"\n\n{request}"
+        ctx_data = await self._gather_context(request)
+        if ctx_data["summary"]:
+            enriched += f"\n\n## Pre-fetched context\n{ctx_data['summary']}"
+        enriched += f"\n\n## User request\n{request}"
 
-        # Run single agent (Blue — most thorough for multi-step workflows)
         result = await self._run_agent(self._blue, "blue", "#3B82F6", enriched)
 
         return {
@@ -305,43 +306,62 @@ class Orchestrator:
             "agents": {"blue": self._result_to_dict(result)},
         }
 
-    async def _gather_context(self, request: str) -> str:
-        """Use MCP semantic search to find relevant tasks and notes."""
+    async def _gather_context(self, request: str) -> dict:
+        """Use MCP semantic search to find relevant tasks and notes.
+        Returns structured data: {tasks: [...], notes: [...], summary: str, item_count: int}"""
         if not self._mcp_clients:
-            return ""
+            return {"tasks": [], "notes": [], "summary": "", "item_count": 0}
 
-        context_parts = []
+        found_tasks = []
+        found_notes = []
+
         try:
-            # Semantic search tasks
             result = await self._mcp_clients["tasks"].call_tool(
                 "semantic_search_tasks", {"query": request, "limit": 3}
             )
             if result and result.content:
-                tasks = json.loads(result.content[0].text)
-                if tasks:
-                    context_parts.append("Related tasks: " + "; ".join(
-                        f"'{t.get('title', '')}' ({t.get('status', '')}, {t.get('priority', '')} priority)"
-                        for t in tasks[:3]
-                    ))
+                parsed = json.loads(result.content[0].text)
+                if isinstance(parsed, list):
+                    found_tasks = parsed[:3]
         except Exception as e:
             print(f"[Prism] Context search (tasks) failed: {e}")
 
         try:
-            # Semantic search notes
             result = await self._mcp_clients["notes"].call_tool(
                 "semantic_search_notes", {"query": request, "limit": 3}
             )
             if result and result.content:
-                notes = json.loads(result.content[0].text)
-                if notes:
-                    context_parts.append("Related notes: " + "; ".join(
-                        f"'{n.get('title', '')}'"
-                        for n in notes[:3]
-                    ))
+                parsed = json.loads(result.content[0].text)
+                if isinstance(parsed, list):
+                    found_notes = parsed[:3]
         except Exception as e:
             print(f"[Prism] Context search (notes) failed: {e}")
 
-        return "\n".join(context_parts) if context_parts else ""
+        # Build a rich text summary that agents can actually use
+        parts = []
+        if found_tasks:
+            parts.append("RELEVANT EXISTING TASKS (already in your system):")
+            for t in found_tasks:
+                m = t.get("momentum_label", "")
+                m_str = f" [{m}]" if m else ""
+                parts.append(f"  • #{t.get('id')}: {t.get('title', '')} ({t.get('status', '')}, {t.get('priority', '')} priority){m_str}")
+        if found_notes:
+            parts.append("RELEVANT EXISTING NOTES:")
+            for n in found_notes:
+                preview = (n.get("content", "") or "")[:100].replace("\n", " ")
+                parts.append(f"  • #{n.get('id')}: {n.get('title', '')} — {preview}...")
+
+        summary = "\n".join(parts) if parts else ""
+        item_count = len(found_tasks) + len(found_notes)
+
+        return {
+            "tasks": found_tasks,
+            "notes": found_notes,
+            "summary": summary,
+            "item_count": item_count,
+            "task_count": len(found_tasks),
+            "note_count": len(found_notes),
+        }
 
     async def _negotiate(self, request: str, red: AgentResult, blue: AgentResult, green: AgentResult) -> dict:
         """Run negotiation round — each agent reviews the other two."""
@@ -442,13 +462,14 @@ class Orchestrator:
 
     @staticmethod
     async def log_performance(db_pool, session_id: int, agents: dict, merged: dict):
-        """Log agent performance metrics to database."""
+        """Log agent performance — uses primary_agent field for accurate winner tracking."""
         if not db_pool or not session_id:
             return
-        selected_agents = set()
-        for c in merged.get("contributions", []):
-            if c.get("kept") and c["kept"] != "None":
-                selected_agents.add(c.get("agent", ""))
+
+        # Use the orchestrator's explicit primary_agent pick (one winner per session)
+        primary = (merged.get("primary_agent") or "").strip().lower()
+        if primary not in ("red", "blue", "green"):
+            primary = ""  # No clear winner
 
         for name, data in agents.items():
             try:
@@ -456,7 +477,7 @@ class Orchestrator:
                 await db_pool.execute(
                     """INSERT INTO agent_performance (session_id, agent_name, was_selected, tools_used, execution_time_ms)
                        VALUES ($1, $2, $3, $4, $5)""",
-                    session_id, name, name in selected_agents, tools, data.get("execution_time_ms", 0),
+                    session_id, name, name == primary, tools, data.get("execution_time_ms", 0),
                 )
             except Exception as e:
                 print(f"[Prism] Failed to log performance for {name}: {e}")

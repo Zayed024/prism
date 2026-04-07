@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import math
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -9,6 +10,39 @@ from datetime import datetime
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
+
+
+def _enrich_with_momentum(task: dict) -> dict:
+    """Add momentum score and human-readable trend to a task.
+    Momentum decays exponentially with inactivity (Akasha physics model).
+    Agents see this and can prioritize stale items."""
+    if task.get("status") == "done":
+        task["momentum"] = 100
+        task["momentum_label"] = "completed"
+        return task
+    updated = task.get("updated_at") or task.get("created_at", "")
+    if not updated:
+        task["momentum"] = 50
+        task["momentum_label"] = "unknown"
+        return task
+    try:
+        last = datetime.fromisoformat(updated.replace("Z", "+00:00")).replace(tzinfo=None)
+        days_idle = (datetime.now() - last).total_seconds() / 86400
+        momentum = max(5, min(100, int(100 * math.exp(-0.05 * days_idle))))
+        if days_idle < 1:
+            label = f"active ({momentum}% momentum)"
+        elif days_idle < 3:
+            label = f"stable ({momentum}% momentum, {int(days_idle)}d idle)"
+        elif days_idle < 7:
+            label = f"DECLINING ({momentum}% momentum, {int(days_idle)}d untouched - needs attention)"
+        else:
+            label = f"STALE ({momentum}% momentum, {int(days_idle)}d untouched - consider archiving or reviving)"
+        task["momentum"] = momentum
+        task["momentum_label"] = label
+    except Exception:
+        task["momentum"] = 50
+        task["momentum_label"] = "unknown"
+    return task
 
 # ── In-memory store (fallback when no DB) ──
 MOCK_TASKS = [
@@ -91,7 +125,7 @@ async def create_task(
     return json.dumps(task)
 
 
-@mcp.tool(name="list_tasks", description="List tasks, optionally filtered by status or priority.")
+@mcp.tool(name="list_tasks", description="List tasks with momentum scores. Each task includes 'momentum' (0-100, lower=stale) and 'momentum_label' (e.g. 'STALE - 14d untouched'). Use these to identify tasks that need attention or revival.")
 async def list_tasks(
     status: str = Field(default="", description="Filter by status: todo, in_progress, done. Empty for all."),
     priority: str = Field(default="", description="Filter by priority: high, medium, low. Empty for all."),
@@ -109,14 +143,14 @@ async def list_tasks(
             query += f" AND priority = ${idx}"; params.append(priority); idx += 1
         query += f" ORDER BY created_at DESC LIMIT ${idx}"; params.append(limit)
         rows = await pool.fetch(query, *params)
-        return json.dumps([_row_to_dict(r) for r in rows], default=str)
+        return json.dumps([_enrich_with_momentum(_row_to_dict(r)) for r in rows], default=str)
 
     filtered = MOCK_TASKS
     if status:
         filtered = [t for t in filtered if t["status"] == status]
     if priority:
         filtered = [t for t in filtered if t["priority"] == priority]
-    return json.dumps(filtered[:limit])
+    return json.dumps([_enrich_with_momentum(dict(t)) for t in filtered[:limit]])
 
 
 @mcp.tool(name="get_task", description="Get a single task by its ID.")
@@ -128,11 +162,11 @@ async def get_task(
         pool = _pool
         row = await pool.fetchrow("SELECT * FROM tasks WHERE id = $1", task_id)
         if not row: return json.dumps({"error": f"Task {task_id} not found"})
-        return json.dumps(_row_to_dict(row), default=str)
+        return json.dumps(_enrich_with_momentum(_row_to_dict(row)), default=str)
 
     task = next((t for t in MOCK_TASKS if t["id"] == task_id), None)
     if not task: return json.dumps({"error": f"Task {task_id} not found"})
-    return json.dumps(task)
+    return json.dumps(_enrich_with_momentum(dict(task)))
 
 
 @mcp.tool(name="update_task", description="Update a task's status, priority, title, or description.")
@@ -165,7 +199,7 @@ async def update_task(
     if title: task["title"] = title
     if description: task["description"] = description
     task["updated_at"] = datetime.now().isoformat()
-    return json.dumps(task)
+    return json.dumps(_enrich_with_momentum(dict(task)))
 
 
 @mcp.tool(name="delete_task", description="Delete a task by its ID.")
@@ -197,11 +231,11 @@ async def search_tasks(
             "SELECT * FROM tasks WHERE title ILIKE $1 OR description ILIKE $1 ORDER BY created_at DESC LIMIT 20",
             f"%{query}%",
         )
-        return json.dumps([_row_to_dict(r) for r in rows], default=str)
+        return json.dumps([_enrich_with_momentum(_row_to_dict(r)) for r in rows], default=str)
 
     q = query.lower()
     matched = [t for t in MOCK_TASKS if q in t["title"].lower() or q in t.get("description", "").lower()]
-    return json.dumps(matched[:20])
+    return json.dumps([_enrich_with_momentum(dict(t)) for t in matched[:20]])
 
 
 @mcp.tool(name="semantic_search_tasks", description="Semantic search for tasks using AI embeddings. Finds tasks by meaning, not just keywords. Powered by AlloyDB AI. Only works when connected to AlloyDB.")
@@ -234,7 +268,7 @@ async def semantic_search_tasks(
         if score > 0:
             scored.append({**t, "similarity": round(score / max(len(q.split()), 1), 2)})
     scored.sort(key=lambda x: x["similarity"], reverse=True)
-    return json.dumps(scored[:limit])
+    return json.dumps([_enrich_with_momentum(dict(t)) for t in scored[:limit]])
 
 
 if __name__ == "__main__":

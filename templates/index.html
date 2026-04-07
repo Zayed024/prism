@@ -304,7 +304,7 @@ function runPrism(){
     const deep=document.getElementById('deep-toggle').checked;
     resetStepper();
     const area=document.getElementById('agent-area');area.classList.remove('hidden');
-    ['red','blue','green'].forEach(a=>{document.getElementById('tools-'+a).innerHTML='';document.getElementById('response-'+a).innerHTML='';document.getElementById('time-'+a).classList.add('hidden');document.getElementById('status-'+a).innerHTML='Waiting'});
+    ['red','blue','green'].forEach(a=>{document.getElementById('tools-'+a).innerHTML='';document.getElementById('response-'+a).innerHTML='';document.getElementById('time-'+a).classList.add('hidden');document.getElementById('status-'+a).innerHTML='Waiting';const col=document.getElementById('col-'+a);col.style.borderColor='';col.style.boxShadow=''});
     document.getElementById('context-panel').classList.add('hidden');document.getElementById('negotiation-panel').classList.add('hidden');document.getElementById('merge-panel').classList.add('hidden');
     document.getElementById('merge-content').innerHTML='';document.getElementById('contributions').innerHTML='';document.getElementById('audit-bar').innerHTML='';
     const btn=document.getElementById('run-btn');btn.disabled=true;btn.innerHTML='<span class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full spin inline-block"></span> Running';
@@ -312,7 +312,23 @@ function runPrism(){
     const es=new EventSource('/api/prism?'+params);
 
     es.addEventListener('context_gathering',()=>{stepActive('context');document.getElementById('context-panel').classList.remove('hidden');document.getElementById('context-status').innerHTML='<span class="w-3 h-3 border border-indigo-400/30 border-t-indigo-400 rounded-full spin inline-block"></span>';document.getElementById('context-content').innerHTML='<span class="text-indigo-400/70">Semantic search via AlloyDB AI...</span>'});
-    es.addEventListener('context_done',(e)=>{stepDone('context','step-line-1');const d=JSON.parse(e.data);document.getElementById('context-status').innerHTML='<span class="text-emerald-400 text-[10px]">Done</span>';document.getElementById('context-content').innerHTML=esc(d.context)||'<span class="text-slate-500">No context found</span>'});
+    es.addEventListener('context_done',(e)=>{
+        stepDone('context','step-line-1');
+        const d=JSON.parse(e.data);
+        const ctx=d.context||{};
+        const count=ctx.item_count||0;
+        document.getElementById('context-status').innerHTML=`<span class="text-emerald-400 text-[10px]">Found ${count} item${count===1?'':'s'}</span>`;
+        if(count===0){
+            document.getElementById('context-content').innerHTML='<span class="text-slate-500 text-[11px]">No related items in your data</span>';
+            return;
+        }
+        const tasks=ctx.tasks||[];const notes=ctx.notes||[];
+        let html='<div class="flex gap-1.5 flex-wrap">';
+        tasks.forEach(t=>{const m=t.momentum||50;const mc=m>70?'#10B981':m>40?'#F59E0B':'#EF4444';html+=`<div class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-indigo-500/8 border border-indigo-500/20 text-[10px]"><span class="text-indigo-400 font-medium">Task #${t.id}</span><span class="text-slate-300">${esc((t.title||'').slice(0,40))}</span><span style="color:${mc}">${m}%</span></div>`});
+        notes.forEach(n=>{html+=`<div class="flex items-center gap-1.5 px-2 py-1 rounded-md bg-violet-500/8 border border-violet-500/20 text-[10px]"><span class="text-violet-400 font-medium">Note #${n.id}</span><span class="text-slate-300">${esc((n.title||'').slice(0,40))}</span></div>`});
+        html+='</div>';
+        document.getElementById('context-content').innerHTML=html;
+    });
     es.addEventListener('agent_start',(e)=>{stepActive('agents');const d=JSON.parse(e.data);document.getElementById('status-'+d.agent).innerHTML='<span class="w-3 h-3 border border-current/30 border-t-current rounded-full spin inline-block" style="color:'+d.color+'"></span>'});
     es.addEventListener('tool_call',(e)=>{const d=JSON.parse(e.data);const el=document.getElementById('tools-'+d.agent);el.innerHTML+=`<div class="fade-up flex items-center gap-1"><span class="tool-pill text-slate-900" style="background:${d.color}">${d.tool}</span><span class="text-[10px] text-slate-600 truncate">${JSON.stringify(d.args||{}).slice(0,50)}</span></div>`;el.scrollTop=el.scrollHeight});
     es.addEventListener('tool_result',()=>{});
@@ -321,12 +337,35 @@ function runPrism(){
     es.addEventListener('negotiation_done',(e)=>{stepDone('negotiate','step-line-3');const d=JSON.parse(e.data);const n=d.negotiations||{};document.getElementById('negotiation-status').innerHTML='<span class="text-emerald-400 text-[10px]">Done</span>';const colors={red:{bg:'rgba(239,68,68,0.06)',text:'text-red-400',dot:'bg-red-500'},blue:{bg:'rgba(59,130,246,0.06)',text:'text-blue-400',dot:'bg-blue-500'},green:{bg:'rgba(16,185,129,0.06)',text:'text-emerald-400',dot:'bg-emerald-500'}};document.getElementById('negotiation-content').innerHTML=['red','blue','green'].map(a=>{const c=colors[a];return`<div class="rounded-lg px-3 py-2 text-[11px]" style="background:${c.bg}"><span class="font-semibold ${c.text}">${a[0].toUpperCase()+a.slice(1)}:</span> <span class="text-slate-300">${esc(n[a]||'')}</span></div>`}).join('')});
     es.addEventListener('merge_start',()=>{if(!document.getElementById('deep-toggle').checked){stepDone('agents','step-line-2');stepDone('negotiate','step-line-3')}stepActive('merge');const p=document.getElementById('merge-panel');p.classList.remove('hidden');document.getElementById('merge-status').innerHTML='<span class="w-3 h-3 border border-indigo-400/30 border-t-indigo-400 rounded-full spin inline-block"></span>';document.getElementById('merge-content').innerHTML='<div class="shimmer h-3 rounded w-3/4 mb-2"></div><div class="shimmer h-3 rounded w-1/2"></div>'});
     es.addEventListener('contrarian_start',()=>{document.getElementById('merge-status').innerHTML='<span class="text-[10px] text-rose-400">Contrarian view...</span>'});
-    es.addEventListener('merge_done',(e)=>{const d=JSON.parse(e.data);const r=d.result||{};document.getElementById('merge-status').innerHTML='<span class="text-emerald-400 text-[10px]">Complete</span>';document.getElementById('merge-content').innerHTML=fmt(r.merged_response||'No result');
-        const contribs=r.contributions||[];if(contribs.length){const colors={red:'#EF4444',blue:'#3B82F6',green:'#10B981'};document.getElementById('contributions').innerHTML='<div class="text-[10px] font-semibold text-slate-500 mb-1.5 mt-1">Contributions</div>'+contribs.map(c=>`<div class="flex items-start gap-1.5 mb-1.5"><span class="tool-pill text-white shrink-0" style="background:${colors[c.agent]||'#666'}">${c.agent}</span><div class="text-[11px] text-slate-400"><strong class="text-slate-300">${esc(c.kept||'')}</strong>${c.reason?' — '+esc(c.reason):''}</div></div>`).join('')}
+    es.addEventListener('merge_done',(e)=>{
+        const d=JSON.parse(e.data);const r=d.result||{};
+        document.getElementById('merge-status').innerHTML='<span class="text-emerald-400 text-[10px]">Complete</span>';
+        document.getElementById('merge-content').innerHTML=fmt(r.merged_response||'No result');
+
+        // Highlight primary winner agent column
+        const primary=(r.primary_agent||'').toLowerCase();
+        if(primary && ['red','blue','green'].includes(primary)){
+            const colors={red:'#EF4444',blue:'#3B82F6',green:'#10B981'};
+            const col=document.getElementById('col-'+primary);
+            col.style.borderColor=colors[primary];
+            col.style.boxShadow=`0 0 24px ${colors[primary]}30`;
+            const status=document.getElementById('status-'+primary);
+            status.innerHTML=`<span class="text-[10px] font-semibold" style="color:${colors[primary]}">★ Selected</span>`;
+        }
+
+        const contribs=r.contributions||[];
+        if(contribs.length){
+            const colors={red:'#EF4444',blue:'#3B82F6',green:'#10B981'};
+            document.getElementById('contributions').innerHTML='<div class="text-[10px] font-semibold text-slate-500 mb-1.5 mt-1">Contributions</div>'+contribs.map(c=>{
+                const isPrimary=c.agent===primary;
+                return `<div class="flex items-start gap-1.5 mb-1.5"><span class="tool-pill text-white shrink-0 ${isPrimary?'ring-1 ring-white':''}" style="background:${colors[c.agent]||'#666'}">${c.agent}${isPrimary?' ★':''}</span><div class="text-[11px] text-slate-400"><strong class="text-slate-300">${esc(c.kept||'')}</strong>${c.reason?' — '+esc(c.reason):''}</div></div>`;
+            }).join('');
+        }
         if(r.conflicts_resolved)document.getElementById('contributions').innerHTML+=`<div class="mt-1.5 px-2.5 py-1.5 rounded-md bg-amber-500/8 border border-amber-500/15 text-[11px] text-amber-300"><strong>Conflicts:</strong> ${esc(r.conflicts_resolved)}</div>`;
         if(r.verdict)document.getElementById('merge-content').innerHTML+=`<div class="mt-2.5 px-2.5 py-1.5 rounded-md bg-indigo-500/8 border border-indigo-500/15 text-[11px] text-indigo-300">${esc(r.verdict)}</div>`;
         if(r.contrarian_view)document.getElementById('merge-content').innerHTML+=`<div class="mt-2 px-2.5 py-1.5 rounded-md bg-rose-500/8 border border-rose-500/15 text-[11px] text-rose-300"><span class="font-semibold">Contrarian:</span> ${esc(r.contrarian_view)}</div>`;
-        finish()});
+        finish();
+    });
     es.addEventListener('audit_summary',(e)=>{const d=JSON.parse(e.data);const a=d.audit||{};document.getElementById('audit-bar').innerHTML=`<div class="px-4 py-2 border-t border-slate-800/50 flex items-center justify-between text-[10px] text-slate-600"><div class="flex gap-3"><span>Tokens: <strong class="text-slate-400">${(a.total_tokens||0).toLocaleString()}</strong></span><span>Cost: <strong class="text-slate-400">$${(a.total_cost_usd||0).toFixed(4)}</strong></span><span>Steps: <strong class="text-slate-400">${a.total_entries||0}</strong></span></div><span>${a.model||''}</span></div>`});
     es.addEventListener('error',()=>finish());es.onerror=()=>{es.close();finish()};
     function finish(){es.close();stepDone('merge',null);stopTimer();btn.disabled=false;btn.innerHTML='Run Prism';loadStats()}
