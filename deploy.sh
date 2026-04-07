@@ -14,7 +14,7 @@ DB_PASSWORD="YOUR_PASSWORD"  # <-- Replace with actual password
 DB_NAME="postgres"
 
 # Gemini config — use Vertex AI on Cloud Run for higher rate limits
-GEMINI_MODEL="gemini-2.5-flash"
+GEMINI_MODEL="gemini-3-flash-preview"
 
 DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${ALLOYDB_IP}:5432/${DB_NAME}"
 
@@ -33,11 +33,12 @@ gcloud run deploy "$SERVICE_NAME" \
     --allow-unauthenticated \
     --vpc-connector="$VPC_CONNECTOR" \
     --set-env-vars="DATABASE_URL=${DATABASE_URL},GEMINI_MODEL=${GEMINI_MODEL},GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${REGION}" \
-    --memory=1Gi \
+    --memory=2Gi \
     --cpu=2 \
     --min-instances=0 \
     --max-instances=3 \
-    --timeout=120
+    --timeout=300 \
+    --concurrency=10
 
 echo ""
 echo "==> Deployment complete!"

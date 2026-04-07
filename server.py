@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
     global _orchestrator, _db_pool, _mcp_clients
 
     database_url = os.environ.get("DATABASE_URL", "")
-    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    gemini_model = os.environ.get("GEMINI_MODEL", "gemini-3-flash-preview")
     python_cmd = sys.executable
     env = {**os.environ}
 
@@ -81,7 +81,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Prism",
     version="1.0.0",
-    description="Multi-Agent Productivity Assistant — 3 AI agents with different cognitive styles collaborate via MCP tools, negotiate, and merge results. Built with Google ADK, Gemini 2.5 Flash, AlloyDB AI, and MCP.",
+    description="Multi-Agent Productivity Assistant — 3 AI agents with different cognitive styles collaborate via MCP tools, negotiate, and merge results. Built with Google ADK, Gemini 3 Flash, AlloyDB AI, and MCP.",
     lifespan=lifespan,
 )
 templates = Jinja2Templates(directory="templates")

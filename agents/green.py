@@ -28,7 +28,7 @@ Always explain what concrete actions you took (tasks created, notes written, ema
 """ + HUMAN_LIMITS_CONTEXT
 
 
-def create_green_agent(tools: list, model: str = "gemini-2.5-flash") -> LlmAgent:
+def create_green_agent(tools: list, model: str = "gemini-3-flash-preview") -> LlmAgent:
     return LlmAgent(
         name="green_agent",
         model=model,

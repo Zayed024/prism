@@ -91,7 +91,7 @@ Respond in 2-3 sentences. Be specific and constructive, not generically negative
 
 
 class Orchestrator:
-    def __init__(self, model: str = "gemini-2.5-flash"):
+    def __init__(self, model: str = "gemini-3-flash-preview"):
         self.model = model
         self.session_service = InMemorySessionService()
         self.merger = GeminiAgent(
@@ -408,7 +408,7 @@ class Orchestrator:
                     query=request, session_service=self.session_service,
                     callback=callback,
                 ),
-                timeout=60,
+                timeout=90,
             )
         except asyncio.TimeoutError:
             return AgentResult(agent_name=name, color=color, response="", error="Agent timed out after 60 seconds")

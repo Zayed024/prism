@@ -32,7 +32,7 @@ def _get_client() -> genai.Client:
 class GeminiAgent:
     """A Gemini-powered agent using google.genai (supports Vertex AI)."""
 
-    def __init__(self, model: str = "gemini-2.5-flash", system_prompt: str = ""):
+    def __init__(self, model: str = "gemini-3-flash-preview", system_prompt: str = ""):
         self.client = _get_client()
         self.model_name = model
         self.system_prompt = system_prompt

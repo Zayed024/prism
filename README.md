@@ -44,7 +44,7 @@ Each agent independently calls tools via **MCP (Model Context Protocol)** — cr
 
 | Component | Technology |
 |-----------|-----------|
-| **AI Model** | Gemini 2.5 Flash (function calling) |
+| **AI Model** | Gemini 3 Flash (function calling) |
 | **Backend** | FastAPI + Uvicorn |
 | **Database** | AlloyDB (PostgreSQL) |
 | **Tool Protocol** | MCP (Model Context Protocol) |
@@ -178,7 +178,7 @@ merge_done   → Final merged result
 
 Built for **Gen AI Academy APAC Edition**
 
-- **Google Gemini 2.5 Flash** — AI reasoning + function calling
+- **Google Gemini 3 Flash** — AI reasoning + function calling
 - **MCP (Model Context Protocol)** — Standardized tool integration
 - **AlloyDB** — Structured data persistence
 - **FastAPI** — Async API server

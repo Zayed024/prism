@@ -12,9 +12,10 @@ from datetime import datetime
 
 # Approximate token costs for Gemini models on Vertex AI (per 1M tokens)
 MODEL_COSTS = {
+    "gemini-3-flash-preview": {"input": 0.30, "output": 1.20},
+    "gemini-3-pro-preview": {"input": 1.25, "output": 5.00},
     "gemini-2.5-flash": {"input": 0.15, "output": 0.60},
     "gemini-2.0-flash": {"input": 0.10, "output": 0.40},
-    "gemini-1.5-flash": {"input": 0.075, "output": 0.30},
 }
 
 
@@ -56,7 +57,7 @@ class AuditEntry:
 class PrismAudit:
     """Collects audit entries across the full Prism pipeline."""
 
-    def __init__(self, model: str = "gemini-2.5-flash"):
+    def __init__(self, model: str = "gemini-3-flash-preview"):
         self.entries: list[AuditEntry] = []
         self.model = model
         self.start_time = time.time()
@@ -67,7 +68,7 @@ class PrismAudit:
         """Log an audit entry with automatic cost estimation."""
         input_tokens = _estimate_tokens(input_text)
         output_tokens = _estimate_tokens(output_text)
-        costs = MODEL_COSTS.get(self.model, MODEL_COSTS["gemini-2.5-flash"])
+        costs = MODEL_COSTS.get(self.model, MODEL_COSTS["gemini-3-flash-preview"])
         cost = (input_tokens * costs["input"] + output_tokens * costs["output"]) / 1_000_000
 
         self.entries.append(AuditEntry(
