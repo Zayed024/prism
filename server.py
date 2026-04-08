@@ -165,21 +165,38 @@ async def run_workflow(workflow_id: str):
                     "total_steps": len(workflow["steps"]),
                 })
 
-                # Build enriched query with previous step context
+                # Build enriched query that genuinely chains previous step DATA
                 enriched_query = step["query"]
                 if step_results:
-                    prev_context = "\n".join(
-                        f"[Previous step '{s['label']}']: {s['summary'][:300]}"
-                        for s in step_results
+                    prev_blocks = []
+                    for s in step_results:
+                        block = f"### Step {s['index'] + 1}: {s['label']}\n{s['summary'][:500]}"
+                        if s.get("tools_called"):
+                            block += f"\n[Tools used: {', '.join(s['tools_called'][:5])}]"
+                        prev_blocks.append(block)
+                    prev_context = "\n\n".join(prev_blocks)
+                    enriched_query = (
+                        f"## Workflow context — previous steps already completed\n"
+                        f"{prev_context}\n\n"
+                        f"## Current step ({i + 1}/{len(workflow['steps'])}): {step['label']}\n"
+                        f"{step['query']}\n\n"
+                        f"IMPORTANT: Build on the previous steps. Reference items found above by ID. "
+                        f"Don't redo work that's already done."
                     )
-                    enriched_query = f"Context from previous steps:\n{prev_context}\n\nCurrent task: {step['query']}"
 
                 # Run lightweight single-agent step (avoids rate limits)
                 result = await _orchestrator.run_lite(enriched_query)
                 merged = result.get("merged", {})
                 summary = merged.get("merged_response", "No result")
+                blue_data = result.get("agents", {}).get("blue", {})
+                tools_called = [tc.get("tool", "") for tc in blue_data.get("tool_calls", [])]
 
-                step_results.append({"label": step["label"], "summary": summary})
+                step_results.append({
+                    "index": i,
+                    "label": step["label"],
+                    "summary": summary,
+                    "tools_called": tools_called,
+                })
 
                 await queue.put({
                     "type": "workflow_step_done",
@@ -382,6 +399,53 @@ async def get_history(limit: int = 20):
         limit,
     )
     return [_row_to_dict(r) for r in rows]
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: int):
+    """Full session detail — agent responses, contributions, performance."""
+    if not _db_pool:
+        return {"error": "Database not connected"}
+    row = await _db_pool.fetchrow(
+        """SELECT id, user_request, red_response, blue_response, green_response, merged_result, created_at
+           FROM prism_sessions WHERE id = $1""",
+        session_id,
+    )
+    if not row:
+        return {"error": f"Session {session_id} not found"}
+
+    perf_rows = await _db_pool.fetch(
+        """SELECT agent_name, was_selected, tools_used, execution_time_ms
+           FROM agent_performance WHERE session_id = $1""",
+        session_id,
+    )
+
+    def _parse_jsonb(val):
+        if isinstance(val, str):
+            try: return json.loads(val)
+            except: return val
+        return val
+
+    return {
+        "id": row["id"],
+        "user_request": row["user_request"],
+        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        "agents": {
+            "red": _parse_jsonb(row["red_response"]),
+            "blue": _parse_jsonb(row["blue_response"]),
+            "green": _parse_jsonb(row["green_response"]),
+        },
+        "merged": _parse_jsonb(row["merged_result"]),
+        "performance": [
+            {
+                "agent_name": p["agent_name"],
+                "was_selected": p["was_selected"],
+                "tools_used": list(p["tools_used"]) if p["tools_used"] else [],
+                "execution_time_ms": p["execution_time_ms"],
+            }
+            for p in perf_rows
+        ],
+    }
 
 
 @app.get("/api/stats")

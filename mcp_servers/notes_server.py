@@ -3,12 +3,35 @@
 import asyncio
 import json
 import os
+import re
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
+
+STOPWORDS = {"a","an","the","and","or","but","is","are","was","were","be","been","being",
+             "have","has","had","do","does","did","will","would","could","should","may",
+             "might","can","this","that","these","those","i","me","my","mine","you","your",
+             "we","our","they","their","what","when","where","why","how","which","who",
+             "for","of","in","on","at","to","from","with","by","about","as","into","than",
+             "then","so","if","some","any","all","each","every","no","not","need","needs",
+             "want","wants","get","got","make","made","tell","show","find","help","please",
+             "show","list","plan","prepare","check","review","summarize"}
+
+
+def _extract_keywords(query: str) -> list[str]:
+    words = re.findall(r"\b[a-zA-Z][a-zA-Z0-9-]+\b", query.lower())
+    return [w for w in words if w not in STOPWORDS and len(w) > 2]
+
+
+def _score_text(text: str, keywords: list[str]) -> float:
+    if not keywords:
+        return 0
+    text_lower = text.lower()
+    matches = sum(1 for kw in keywords if kw in text_lower)
+    return matches / len(keywords)
 
 # ── In-memory store (fallback when no DB) ──
 MOCK_NOTES = [
@@ -161,33 +184,52 @@ async def link_note_to_task(
     return json.dumps(note)
 
 
-@mcp.tool(name="semantic_search_notes", description="Semantic search for notes using AI embeddings. Finds notes by meaning, not just keywords. Powered by AlloyDB AI. Only works when connected to AlloyDB.")
+@mcp.tool(name="semantic_search_notes", description="Hybrid semantic search for notes. Tries AlloyDB AI vector search first, falls back to smart keyword scoring. Always returns relevant matches even for natural language queries.")
 async def semantic_search_notes(
     query: str = Field(description="Natural language search query"),
     limit: int = Field(default=5, description="Max results to return"),
     ctx=None,
 ) -> str:
+    keywords = _extract_keywords(query)
+
     if _use_db:
         pool = _pool
+        # Phase 1: Try vector search
         try:
-            rows = await pool.fetch(
-                "SELECT * FROM semantic_search_notes($1, $2)",
-                query, limit,
-            )
-            return json.dumps([_row_to_dict(r) for r in rows], default=str)
-        except Exception as e:
-            return await search_notes(query=query, ctx=ctx)
+            rows = await pool.fetch("SELECT * FROM semantic_search_notes($1, $2)", query, limit)
+            if rows:
+                return json.dumps([_row_to_dict(r) for r in rows], default=str)
+        except Exception:
+            pass
 
-    q = query.lower()
+        # Phase 2: Smart keyword fallback on database
+        if keywords:
+            ilike_clauses = " OR ".join([f"title ILIKE ${i+1} OR content ILIKE ${i+1} OR ${i+1} = ANY(tags)" for i in range(len(keywords))])
+            params = [f"%{kw}%" for kw in keywords]
+            params.append(limit)
+            query_sql = f"SELECT * FROM notes WHERE {ilike_clauses} ORDER BY created_at DESC LIMIT ${len(keywords)+1}"
+            try:
+                rows = await pool.fetch(query_sql, *params)
+                scored = []
+                for r in rows:
+                    d = _row_to_dict(r)
+                    text = f"{d.get('title','')} {d.get('content','')} {' '.join(d.get('tags',[]))}"
+                    score = _score_text(text, keywords)
+                    scored.append({**d, "similarity": round(score, 2)})
+                scored.sort(key=lambda x: x["similarity"], reverse=True)
+                return json.dumps(scored[:limit], default=str)
+            except Exception:
+                return json.dumps([])
+
+    # Mock: smart keyword scoring
+    if not keywords:
+        return json.dumps([])
     scored = []
     for n in MOCK_NOTES:
-        score = 0
-        text = f"{n['title']} {n.get('content', '')}".lower()
-        for word in q.split():
-            if word in text:
-                score += 1
+        text = f"{n['title']} {n.get('content', '')} {' '.join(n.get('tags', []))}"
+        score = _score_text(text, keywords)
         if score > 0:
-            scored.append({**n, "similarity": round(score / max(len(q.split()), 1), 2)})
+            scored.append({**n, "similarity": round(score, 2)})
     scored.sort(key=lambda x: x["similarity"], reverse=True)
     return json.dumps(scored[:limit])
 

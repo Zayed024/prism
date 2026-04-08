@@ -402,7 +402,63 @@ async function submitNote(){const t=document.getElementById('new-note-title').va
 async function loadNotes(){try{const r=await fetch('/api/notes');const notes=await r.json();const el=document.getElementById('notes-list');if(!notes.length){el.innerHTML='<div class="text-slate-500 text-xs py-4 text-center">No notes</div>';return}el.innerHTML=notes.map(n=>`<div class="card px-3.5 py-3 card-hover transition"><div class="flex items-center justify-between mb-1.5"><span class="text-xs text-white font-medium">${esc(n.title)}</span><div class="flex gap-1.5">${n.linked_task_id?`<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-300">Task #${n.linked_task_id}</span>`:''}${(n.tags||[]).map(t=>`<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">${esc(t)}</span>`).join('')}</div></div><pre class="text-[11px] text-slate-400 whitespace-pre-wrap font-sans leading-relaxed">${esc((n.content||'').slice(0,300))}${(n.content||'').length>300?'...':''}</pre></div>`).join('')}catch(e){document.getElementById('notes-list').innerHTML='<div class="text-red-400 text-xs">Failed</div>'}}
 
 // ═══ History + Agent Stats ═══
-async function loadHistory(){try{const r=await fetch('/api/history');const s=await r.json();const el=document.getElementById('history-list');if(!s.length){el.innerHTML='<div class="text-slate-500 text-xs py-4 text-center">No sessions yet</div>';return}el.innerHTML=s.map(s=>{let m='';try{const p=typeof s.merged_result==='string'?JSON.parse(s.merged_result):s.merged_result;m=p?.merged_response||JSON.stringify(p).slice(0,150)}catch{m=String(s.merged_result||'').slice(0,150)};return`<div class="card px-3.5 py-2.5 card-hover transition"><div class="flex items-center justify-between mb-1"><span class="text-xs text-white font-medium">${esc(s.user_request)}</span><span class="text-[10px] text-slate-500">${new Date(s.created_at).toLocaleString()}</span></div><div class="text-[11px] text-slate-400 line-clamp-2">${esc(m)}</div></div>`}).join('')}catch(e){}}
+async function loadHistory(){
+    try{
+        const r=await fetch('/api/history');const s=await r.json();
+        const el=document.getElementById('history-list');
+        if(!s.length){el.innerHTML='<div class="text-slate-500 text-xs py-4 text-center">No sessions yet</div>';return}
+        el.innerHTML=s.map(s=>{
+            let m='';try{const p=typeof s.merged_result==='string'?JSON.parse(s.merged_result):s.merged_result;m=p?.merged_response||JSON.stringify(p).slice(0,150)}catch{m=String(s.merged_result||'').slice(0,150)}
+            return`<div class="card px-3.5 py-2.5 card-hover transition cursor-pointer" onclick="toggleSession(${s.id},this)">
+                <div class="flex items-center justify-between mb-1"><span class="text-xs text-white font-medium">${esc(s.user_request)}</span><span class="text-[10px] text-slate-500">${new Date(s.created_at).toLocaleString()}</span></div>
+                <div class="text-[11px] text-slate-400 line-clamp-2">${esc(m)}</div>
+                <div id="session-detail-${s.id}" class="hidden mt-3 pt-3 border-t border-slate-800"></div>
+            </div>`
+        }).join('')
+    }catch(e){}
+}
+
+async function toggleSession(id,card){
+    const el=document.getElementById('session-detail-'+id);
+    if(!el.classList.contains('hidden')){el.classList.add('hidden');el.innerHTML='';return}
+    el.classList.remove('hidden');
+    el.innerHTML='<div class="text-[11px] text-slate-500">Loading...</div>';
+    try{
+        const r=await fetch('/api/sessions/'+id);
+        const d=await r.json();
+        if(d.error){el.innerHTML=`<div class="text-[11px] text-red-400">${esc(d.error)}</div>`;return}
+        const colors={red:'#EF4444',blue:'#3B82F6',green:'#10B981'};
+        const primary=(d.merged?.primary_agent||'').toLowerCase();
+        const perf=d.performance||[];
+        const perfMap={};perf.forEach(p=>perfMap[p.agent_name]=p);
+
+        let html='<div class="grid grid-cols-3 gap-2 mb-3">';
+        ['red','blue','green'].forEach(a=>{
+            const ag=d.agents?.[a]||{};
+            const p=perfMap[a]||{};
+            const isWinner=a===primary;
+            html+=`<div class="rounded-lg border ${isWinner?'border-2':''} p-2.5" style="border-color:${colors[a]}40;background:${colors[a]}08">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-[10px] font-bold" style="color:${colors[a]}">${a.toUpperCase()}${isWinner?' ★':''}</span>
+                    <span class="text-[9px] text-slate-500">${p.execution_time_ms?(p.execution_time_ms/1000).toFixed(1)+'s':'-'} · ${(p.tools_used||[]).length} tools</span>
+                </div>
+                <div class="text-[10px] text-slate-300 max-h-32 overflow-y-auto leading-relaxed">${fmt((ag.response||'').slice(0,400))}${(ag.response||'').length>400?'...':''}</div>
+            </div>`
+        });
+        html+='</div>';
+
+        const m=d.merged||{};
+        if(m.contributions?.length){
+            html+='<div class="text-[10px] font-semibold text-slate-500 mb-1">Contributions</div>';
+            m.contributions.forEach(c=>{
+                const isPrimary=c.agent===primary;
+                html+=`<div class="flex items-start gap-1.5 mb-1"><span class="tool-pill text-white shrink-0 ${isPrimary?'ring-1 ring-white':''}" style="background:${colors[c.agent]||'#666'}">${c.agent}${isPrimary?' ★':''}</span><div class="text-[10px] text-slate-400"><strong class="text-slate-300">${esc(c.kept||'')}</strong>${c.reason?' — '+esc(c.reason):''}</div></div>`
+            });
+        }
+        if(m.verdict)html+=`<div class="mt-2 px-2 py-1 rounded bg-indigo-500/8 border border-indigo-500/15 text-[10px] text-indigo-300">${esc(m.verdict)}</div>`;
+        el.innerHTML=html;
+    }catch(e){el.innerHTML='<div class="text-[11px] text-red-400">Failed to load detail</div>'}
+}
 
 async function loadAgentStats(){try{const r=await fetch('/api/agent-stats');const d=await r.json();const el=document.getElementById('perf-chart');const empty=document.getElementById('perf-empty');const agents=[{k:'red',l:'Red',c:'#EF4444'},{k:'blue',l:'Blue',c:'#3B82F6'},{k:'green',l:'Green',c:'#10B981'}];if(!agents.some(a=>(d[a.k]?.total||0)>0)){el.classList.add('hidden');empty.classList.remove('hidden');return}el.classList.remove('hidden');empty.classList.add('hidden');const mx=Math.max(...agents.map(a=>d[a.k]?.total||0),1);el.innerHTML=agents.map(a=>{const v=d[a.k]||{selected:0,total:0,avg_time_ms:0,win_rate:0};const h=Math.max((v.total/mx)*100,10);const sh=v.total>0?(v.selected/mx)*100:0;return`<div class="flex flex-col items-center gap-1.5 flex-1"><div class="text-xs font-bold" style="color:${a.c}">${v.win_rate||0}%</div><div class="w-full flex justify-center" style="height:130px"><div class="relative w-full max-w-[50px] rounded-t-md overflow-hidden" style="height:${h}%;background:${a.c}15;border:1px solid ${a.c}30"><div class="absolute bottom-0 left-0 right-0" style="height:${h>0?sh/h*100:0}%;background:${a.c};opacity:0.6"></div></div></div><div class="text-[11px] font-semibold" style="color:${a.c}">${a.l}</div><div class="text-[10px] text-slate-500">${v.selected}/${v.total}</div></div>`}).join('')}catch(e){}}
 

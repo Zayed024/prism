@@ -4,12 +4,37 @@ import asyncio
 import json
 import math
 import os
+import re
 import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
+
+STOPWORDS = {"a","an","the","and","or","but","is","are","was","were","be","been","being",
+             "have","has","had","do","does","did","will","would","could","should","may",
+             "might","can","this","that","these","those","i","me","my","mine","you","your",
+             "we","our","they","their","what","when","where","why","how","which","who",
+             "for","of","in","on","at","to","from","with","by","about","as","into","than",
+             "then","so","if","some","any","all","each","every","no","not","need","needs",
+             "want","wants","get","got","make","made","tell","show","find","help","please",
+             "show","list","plan","prepare","check","review","summarize"}
+
+
+def _extract_keywords(query: str) -> list[str]:
+    """Extract meaningful keywords from a natural language query."""
+    words = re.findall(r"\b[a-zA-Z][a-zA-Z0-9-]+\b", query.lower())
+    return [w for w in words if w not in STOPWORDS and len(w) > 2]
+
+
+def _score_text(text: str, keywords: list[str]) -> float:
+    """Score how well text matches keywords (0-1)."""
+    if not keywords:
+        return 0
+    text_lower = text.lower()
+    matches = sum(1 for kw in keywords if kw in text_lower)
+    return matches / len(keywords)
 
 
 def _enrich_with_momentum(task: dict) -> dict:
@@ -241,35 +266,53 @@ async def search_tasks(
     return json.dumps([_enrich_with_momentum(dict(t)) for t in matched[:20]])
 
 
-@mcp.tool(name="semantic_search_tasks", description="Semantic search for tasks using AI embeddings. Finds tasks by meaning, not just keywords. Powered by AlloyDB AI. Only works when connected to AlloyDB.")
+@mcp.tool(name="semantic_search_tasks", description="Hybrid semantic search for tasks. Tries AlloyDB AI vector search first (when embeddings available), falls back to smart keyword scoring with stopword filtering. Always returns relevant matches even for natural language queries.")
 async def semantic_search_tasks(
     query: str = Field(description="Natural language search query"),
     limit: int = Field(default=5, description="Max results to return"),
     ctx=None,
 ) -> str:
+    keywords = _extract_keywords(query)
+
+    # Phase 1: Try AlloyDB AI vector search
     if _use_db:
         pool = _pool
         try:
-            rows = await pool.fetch(
-                "SELECT * FROM semantic_search_tasks($1, $2)",
-                query, limit,
-            )
-            return json.dumps([_row_to_dict(r) for r in rows], default=str)
-        except Exception as e:
-            # Fallback to keyword search if embeddings not set up
-            return await search_tasks(query=query, ctx=ctx)
+            rows = await pool.fetch("SELECT * FROM semantic_search_tasks($1, $2)", query, limit)
+            if rows:
+                return json.dumps([_enrich_with_momentum(_row_to_dict(r)) for r in rows], default=str)
+        except Exception:
+            pass  # Embeddings not set up, fall through to keyword search
 
-    # Mock: simple relevance-scored keyword search
-    q = query.lower()
+        # Phase 2: Smart keyword fallback on database
+        if keywords:
+            ilike_clauses = " OR ".join([f"title ILIKE ${i+1} OR description ILIKE ${i+1} OR ${i+1} = ANY(tags)" for i in range(len(keywords))])
+            params = [f"%{kw}%" for kw in keywords]
+            params.append(limit)
+            query_sql = f"SELECT * FROM tasks WHERE {ilike_clauses} ORDER BY updated_at DESC LIMIT ${len(keywords)+1}"
+            try:
+                rows = await pool.fetch(query_sql, *params)
+                # Re-score and sort by relevance
+                scored = []
+                for r in rows:
+                    d = _row_to_dict(r)
+                    text = f"{d.get('title','')} {d.get('description','')} {' '.join(d.get('tags',[]))}"
+                    score = _score_text(text, keywords)
+                    scored.append({**d, "similarity": round(score, 2)})
+                scored.sort(key=lambda x: x["similarity"], reverse=True)
+                return json.dumps([_enrich_with_momentum(t) for t in scored[:limit]], default=str)
+            except Exception:
+                return json.dumps([])
+
+    # Mock: smart keyword scoring
+    if not keywords:
+        return json.dumps([])
     scored = []
     for t in MOCK_TASKS:
-        score = 0
-        text = f"{t['title']} {t.get('description', '')}".lower()
-        for word in q.split():
-            if word in text:
-                score += 1
+        text = f"{t['title']} {t.get('description', '')} {' '.join(t.get('tags', []))}"
+        score = _score_text(text, keywords)
         if score > 0:
-            scored.append({**t, "similarity": round(score / max(len(q.split()), 1), 2)})
+            scored.append({**t, "similarity": round(score, 2)})
     scored.sort(key=lambda x: x["similarity"], reverse=True)
     return json.dumps([_enrich_with_momentum(dict(t)) for t in scored[:limit]])
 
