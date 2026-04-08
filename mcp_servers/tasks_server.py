@@ -53,34 +53,46 @@ def _enrich_with_momentum(task: dict) -> dict:
     try:
         last = datetime.fromisoformat(updated.replace("Z", "+00:00")).replace(tzinfo=None)
         days_idle = (datetime.now() - last).total_seconds() / 86400
-        momentum = max(5, min(100, int(100 * math.exp(-0.05 * days_idle))))
-        if days_idle < 1:
+        # Slower decay (0.03/day) so demo data stays useful longer
+        momentum = max(5, min(100, int(100 * math.exp(-0.03 * days_idle))))
+        if days_idle < 3:
+            trend = "active"
             label = f"active ({momentum}% momentum)"
-        elif days_idle < 3:
-            label = f"stable ({momentum}% momentum, {int(days_idle)}d idle)"
         elif days_idle < 7:
+            trend = "stable"
+            label = f"stable ({momentum}% momentum, {int(days_idle)}d idle)"
+        elif days_idle < 14:
+            trend = "declining"
             label = f"DECLINING ({momentum}% momentum, {int(days_idle)}d untouched - needs attention)"
         else:
+            trend = "stale"
             label = f"STALE ({momentum}% momentum, {int(days_idle)}d untouched - consider archiving or reviving)"
         task["momentum"] = momentum
         task["momentum_label"] = label
+        task["momentum_trend"] = trend
     except Exception:
         task["momentum"] = 50
         task["momentum_label"] = "unknown"
     return task
 
 # ── In-memory store (fallback when no DB) ──
+# Dates are computed relative to "now" so demo data always looks fresh
+from datetime import timedelta as _td
+def _now(): return datetime.now()
+def _days(n): return (_now() + _td(days=n)).isoformat()
+def _days_ago(n): return (_now() - _td(days=n)).isoformat()
+
 MOCK_TASKS = [
-    {"id": 1, "title": "Finish Q2 quarterly report", "description": "Compile data from all departments and create executive summary", "status": "in_progress", "priority": "high", "due_date": "2026-04-10T17:00:00", "tags": ["work", "report", "Q2"], "created_by": "user", "created_at": "2026-04-01T09:00:00", "updated_at": "2026-04-01T09:00:00"},
-    {"id": 2, "title": "Review API documentation", "description": "Go through the updated API docs and flag inconsistencies", "status": "todo", "priority": "medium", "due_date": "2026-04-07T12:00:00", "tags": ["work", "docs", "api"], "created_by": "user", "created_at": "2026-04-01T09:00:00", "updated_at": "2026-04-01T09:00:00"},
-    {"id": 3, "title": "Prepare client presentation", "description": "Create slide deck for Friday client meeting", "status": "todo", "priority": "high", "due_date": "2026-04-04T09:00:00", "tags": ["work", "client", "presentation"], "created_by": "user", "created_at": "2026-04-01T09:00:00", "updated_at": "2026-04-01T09:00:00"},
-    {"id": 4, "title": "Grocery shopping", "description": "Buy vegetables, milk, eggs, and bread", "status": "todo", "priority": "low", "due_date": "2026-04-05T18:00:00", "tags": ["personal", "errands"], "created_by": "user", "created_at": "2026-04-01T09:00:00", "updated_at": "2026-04-01T09:00:00"},
-    {"id": 5, "title": "Code review: auth module", "description": "Review PR #247 for the new authentication flow", "status": "todo", "priority": "high", "due_date": "2026-04-04T15:00:00", "tags": ["work", "code-review", "auth"], "created_by": "user", "created_at": "2026-04-01T09:00:00", "updated_at": "2026-04-01T09:00:00"},
-    {"id": 6, "title": "Schedule dentist appointment", "description": "Call Dr. Patel office for a cleaning", "status": "todo", "priority": "low", "due_date": None, "tags": ["personal", "health"], "created_by": "user", "created_at": "2026-04-01T09:00:00", "updated_at": "2026-04-01T09:00:00"},
-    {"id": 7, "title": "Write blog post on MCP", "description": "Draft a technical blog about Model Context Protocol integration patterns", "status": "in_progress", "priority": "medium", "due_date": "2026-04-12T12:00:00", "tags": ["work", "writing", "tech"], "created_by": "user", "created_at": "2026-04-01T09:00:00", "updated_at": "2026-04-01T09:00:00"},
-    {"id": 8, "title": "Update team onboarding guide", "description": "Add new sections about CI/CD pipeline and testing", "status": "todo", "priority": "medium", "due_date": "2026-04-15T17:00:00", "tags": ["work", "docs", "onboarding"], "created_by": "user", "created_at": "2026-04-01T09:00:00", "updated_at": "2026-04-01T09:00:00"},
-    {"id": 9, "title": "Plan weekend trip", "description": "Research destinations and book accommodation for Apr 18-20", "status": "todo", "priority": "low", "due_date": "2026-04-11T20:00:00", "tags": ["personal", "travel"], "created_by": "user", "created_at": "2026-04-01T09:00:00", "updated_at": "2026-04-01T09:00:00"},
-    {"id": 10, "title": "Fix deployment pipeline bug", "description": "Cloud Build fails intermittently on the test stage", "status": "in_progress", "priority": "high", "due_date": "2026-04-05T12:00:00", "tags": ["work", "devops", "bug"], "created_by": "user", "created_at": "2026-04-01T09:00:00", "updated_at": "2026-04-01T09:00:00"},
+    {"id": 1, "title": "Finish Q2 quarterly report", "description": "Compile data from all departments and create executive summary", "status": "in_progress", "priority": "high", "due_date": _days(2), "tags": ["work", "report", "Q2"], "created_by": "user", "created_at": _days_ago(7), "updated_at": _days_ago(1)},
+    {"id": 2, "title": "Review API documentation", "description": "Go through the updated API docs and flag inconsistencies", "status": "todo", "priority": "medium", "due_date": _days(0), "tags": ["work", "docs", "api"], "created_by": "user", "created_at": _days_ago(7), "updated_at": _days_ago(5)},
+    {"id": 3, "title": "Prepare client presentation", "description": "Create slide deck for Friday client meeting", "status": "todo", "priority": "high", "due_date": _days(-3), "tags": ["work", "client", "presentation"], "created_by": "user", "created_at": _days_ago(7), "updated_at": _days_ago(3)},
+    {"id": 4, "title": "Grocery shopping", "description": "Buy vegetables, milk, eggs, and bread", "status": "todo", "priority": "low", "due_date": _days(-2), "tags": ["personal", "errands"], "created_by": "user", "created_at": _days_ago(7), "updated_at": _days_ago(8)},
+    {"id": 5, "title": "Code review: auth module", "description": "Review PR #247 for the new authentication flow", "status": "todo", "priority": "high", "due_date": _days(-3), "tags": ["work", "code-review", "auth"], "created_by": "user", "created_at": _days_ago(7), "updated_at": _days_ago(2)},
+    {"id": 6, "title": "Schedule dentist appointment", "description": "Call Dr. Patel office for a cleaning", "status": "todo", "priority": "low", "due_date": None, "tags": ["personal", "health"], "created_by": "user", "created_at": _days_ago(7), "updated_at": _days_ago(15)},
+    {"id": 7, "title": "Write blog post on MCP", "description": "Draft a technical blog about Model Context Protocol integration patterns", "status": "in_progress", "priority": "medium", "due_date": _days(4), "tags": ["work", "writing", "tech"], "created_by": "user", "created_at": _days_ago(7), "updated_at": _days_ago(0)},
+    {"id": 8, "title": "Update team onboarding guide", "description": "Add new sections about CI/CD pipeline and testing", "status": "todo", "priority": "medium", "due_date": _days(7), "tags": ["work", "docs", "onboarding"], "created_by": "user", "created_at": _days_ago(7), "updated_at": _days_ago(10)},
+    {"id": 9, "title": "Plan weekend trip", "description": "Research destinations and book accommodation", "status": "todo", "priority": "low", "due_date": _days(3), "tags": ["personal", "travel"], "created_by": "user", "created_at": _days_ago(7), "updated_at": _days_ago(6)},
+    {"id": 10, "title": "Fix deployment pipeline bug", "description": "Cloud Build fails intermittently on the test stage", "status": "in_progress", "priority": "high", "due_date": _days(-3), "tags": ["work", "devops", "bug"], "created_by": "user", "created_at": _days_ago(7), "updated_at": _days_ago(0)},
 ]
 _next_id = 11
 _use_db = False

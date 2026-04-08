@@ -583,13 +583,13 @@ def _add_momentum(task: dict) -> dict:
     try:
         last_touch = datetime.fromisoformat(updated.replace("Z", "+00:00")).replace(tzinfo=None)
         days_idle = (datetime.now() - last_touch).total_seconds() / 86400
-        # Exponential decay: M(t) = 100 * e^(-0.05 * days)
-        momentum = max(5, min(100, int(100 * math.exp(-0.05 * days_idle))))
-        if days_idle < 1:
+        # Slower exponential decay: M(t) = 100 * e^(-0.03 * days)
+        momentum = max(5, min(100, int(100 * math.exp(-0.03 * days_idle))))
+        if days_idle < 3:
             trend = "active"
-        elif days_idle < 3:
-            trend = "stable"
         elif days_idle < 7:
+            trend = "stable"
+        elif days_idle < 14:
             trend = "declining"
         else:
             trend = "stale"
