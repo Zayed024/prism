@@ -448,6 +448,62 @@ async def get_session(session_id: int):
     }
 
 
+@app.get("/api/dashboard")
+async def get_dashboard():
+    """Aggregated dashboard metrics — sessions, cost estimation, momentum tracking."""
+    # Estimated cost per session (~3 agents + merge calls, gemini-3-flash-preview pricing)
+    EST_COST_PER_SESSION = 0.0011  # Based on real audit averages
+
+    out = {
+        "sessions": {"total": 0, "today": 0, "est_cost_usd": 0.0},
+        "momentum": {"avg": 0, "active_count": 0, "stale_count": 0, "active_tasks": 0},
+        "tools": {"total": 0, "by_agent": {}},
+    }
+
+    # Sessions + cost
+    if _db_pool:
+        try:
+            total = await _db_pool.fetchval("SELECT COUNT(*) FROM prism_sessions")
+            today = await _db_pool.fetchval(
+                "SELECT COUNT(*) FROM prism_sessions WHERE created_at::date = CURRENT_DATE"
+            )
+            out["sessions"]["total"] = int(total or 0)
+            out["sessions"]["today"] = int(today or 0)
+            out["sessions"]["est_cost_usd"] = round(int(total or 0) * EST_COST_PER_SESSION, 4)
+
+            # Tool counts per agent
+            rows = await _db_pool.fetch(
+                """SELECT agent_name, COALESCE(SUM(array_length(tools_used, 1)), 0) as tools
+                   FROM agent_performance GROUP BY agent_name"""
+            )
+            for r in rows:
+                out["tools"]["by_agent"][r["agent_name"]] = int(r["tools"] or 0)
+            out["tools"]["total"] = sum(out["tools"]["by_agent"].values())
+        except Exception as e:
+            print(f"[Prism] Dashboard stats failed: {e}")
+
+    # Momentum from tasks
+    try:
+        if _db_pool:
+            rows = await _db_pool.fetch("SELECT * FROM tasks WHERE status != 'done' ORDER BY updated_at DESC")
+            tasks = [_add_momentum(_row_to_dict(r)) for r in rows]
+        else:
+            result = await _mcp_clients["tasks"].call_tool("list_tasks", {})
+            tasks = json.loads(result.content[0].text) if result and result.content else []
+            tasks = [_add_momentum(t) for t in tasks if t.get("status") != "done"]
+
+        if tasks:
+            momentums = [t.get("momentum", 0) for t in tasks]
+            out["momentum"]["active_tasks"] = len(tasks)
+            out["momentum"]["avg"] = round(sum(momentums) / len(momentums))
+            out["momentum"]["active_count"] = sum(1 for t in tasks if t.get("momentum_trend") in ("active", "stable"))
+            out["momentum"]["stale_count"] = sum(1 for t in tasks if t.get("momentum_trend") in ("declining", "stale"))
+    except Exception as e:
+        print(f"[Prism] Momentum stats failed: {e}")
+
+    return out
+
+
 @app.get("/api/stats")
 async def get_stats():
     if _db_pool:
