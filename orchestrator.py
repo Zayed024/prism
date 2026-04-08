@@ -224,9 +224,10 @@ class Orchestrator:
                 })
 
         # ── Phase 3 (optional): Agent Negotiation ─────────────
+        # Brief pauses prevent Vertex AI rate limit bursts after the parallel agents
         negotiations = {}
         if deep_analysis:
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
             if callback:
                 await callback({"type": "negotiation_start", "message": "Agents reviewing each other's work..."})
             neg_start = _time.time()
@@ -238,7 +239,7 @@ class Orchestrator:
                 await callback({"type": "negotiation_done", "negotiations": negotiations})
 
         # ── Phase 4: Merge ────────────────────────────────────
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
 
         if callback:
             await callback({"type": "merge_start"})
@@ -411,7 +412,7 @@ class Orchestrator:
                 timeout=90,
             )
         except asyncio.TimeoutError:
-            return AgentResult(agent_name=name, color=color, response="", error="Agent timed out after 60 seconds")
+            return AgentResult(agent_name=name, color=color, response="", error="Agent timed out after 90 seconds")
         except Exception as e:
             return AgentResult(agent_name=name, color=color, response="", error=str(e))
 
