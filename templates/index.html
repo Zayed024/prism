@@ -276,7 +276,7 @@
                     <div class="flex items-center gap-1"><div class="w-2 h-2 rounded-sm bg-white"></div>Wins</div>
                 </div>
             </div>
-            <div id="perf-chart" class="flex gap-8 items-end justify-around h-48"></div>
+            <div id="perf-chart" class="flex gap-8 justify-around"></div>
             <div id="perf-empty" class="hidden text-center text-xs text-slate-500 py-12">Run queries to see agent performance data</div>
         </div>
         <div class="card p-4">
@@ -562,25 +562,26 @@ async function loadAgentStats(){
             </div>`
         }).join('');
 
-        // Chart
+        // Chart — 3-row layout: percentage, bar area, label
         const el=document.getElementById('perf-chart');const empty=document.getElementById('perf-empty');
         if(!agents.some(a=>(d[a.k]?.total||0)>0)){
             el.classList.add('hidden');empty.classList.remove('hidden');return
         }
         el.classList.remove('hidden');empty.classList.add('hidden');
         const mx=Math.max(...agents.map(a=>d[a.k]?.total||0),1);
+        const BAR_AREA_PX=140;
         el.innerHTML=agents.map(a=>{
             const v=d[a.k]||{selected:0,total:0,avg_time_ms:0,win_rate:0};
-            const totalH=Math.max((v.total/mx)*100,8);
-            const winH=v.total>0?(v.selected/mx)*100:0;
-            return `<div class="flex flex-col items-center gap-2 flex-1 max-w-[100px]">
-                <div class="text-xl font-bold" style="color:${a.c}">${v.win_rate||0}%</div>
-                <div class="w-full flex justify-center" style="height:140px">
-                    <div class="relative w-full max-w-[60px] rounded-t-lg overflow-hidden" style="height:${totalH}%;background:${a.c}15;border:1px solid ${a.c}40">
-                        <div class="absolute bottom-0 left-0 right-0 transition-all duration-700" style="height:${totalH>0?winH/totalH*100:0}%;background:${a.c}"></div>
+            const totalPx=Math.max((v.total/mx)*BAR_AREA_PX,12);
+            const winPctOfTotal=v.total>0?(v.selected/v.total)*100:0;
+            return `<div class="flex flex-col items-center flex-1 max-w-[110px]">
+                <div class="text-lg font-bold mb-1.5" style="color:${a.c};line-height:1">${v.win_rate||0}%</div>
+                <div class="w-full flex items-end justify-center" style="height:${BAR_AREA_PX}px">
+                    <div class="relative w-full max-w-[56px] rounded-t-lg overflow-hidden" style="height:${totalPx}px;background:${a.c}15;border:1px solid ${a.c}40">
+                        <div class="absolute bottom-0 left-0 right-0 transition-all duration-700" style="height:${winPctOfTotal}%;background:${a.c}"></div>
                     </div>
                 </div>
-                <div class="text-center">
+                <div class="text-center mt-2">
                     <div class="text-[11px] font-bold" style="color:${a.c}">${a.l}</div>
                     <div class="text-[9px] text-slate-500">${a.sub}</div>
                     <div class="text-[10px] text-slate-400 mt-1">${v.selected}/${v.total} wins · ${v.avg_time_ms?(v.avg_time_ms/1000).toFixed(1)+'s':'-'}</div>
