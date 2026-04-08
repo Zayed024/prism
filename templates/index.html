@@ -235,14 +235,61 @@
     <div id="notes-list" class="space-y-2"></div>
 </div>
 
-<!-- ═══ HISTORY VIEW ═══ -->
+<!-- ═══ HISTORY VIEW (Analytics Dashboard) ═══ -->
 <div id="view-history" class="hidden">
-    <div id="perf-section" class="card p-5 mb-5">
-        <h3 class="text-xs font-semibold text-white mb-4">Agent Performance</h3>
-        <div id="perf-chart" class="flex gap-6 items-end justify-center h-44"></div>
-        <div id="perf-empty" class="hidden text-center text-xs text-slate-500 py-8">Run queries to see agent performance data</div>
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-bold text-white">Analytics & History</h2>
+        <span class="text-[10px] text-slate-500">Live agent performance from session data</span>
     </div>
-    <h2 class="text-lg font-bold text-white mb-3">Session History</h2>
+
+    <!-- KPI Cards -->
+    <div id="kpi-row" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div class="card p-3.5">
+            <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Sessions</div>
+            <div id="kpi-sessions" class="text-2xl font-bold text-white mt-1">-</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">all-time runs</div>
+        </div>
+        <div class="card p-3.5">
+            <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Avg Response</div>
+            <div id="kpi-avg-time" class="text-2xl font-bold text-white mt-1">-</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">per agent</div>
+        </div>
+        <div class="card p-3.5">
+            <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Top Agent</div>
+            <div id="kpi-top-agent" class="text-2xl font-bold mt-1">-</div>
+            <div class="text-[10px] text-slate-500 mt-0.5" id="kpi-top-rate">-</div>
+        </div>
+        <div class="card p-3.5">
+            <div class="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Tool Calls</div>
+            <div id="kpi-tools" class="text-2xl font-bold text-white mt-1">-</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">total executed</div>
+        </div>
+    </div>
+
+    <!-- Agent Performance Chart + Detail -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+        <div class="card p-4 md:col-span-2">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-xs font-semibold text-white">Win Rate by Agent</h3>
+                <div class="flex gap-3 text-[9px] text-slate-500">
+                    <div class="flex items-center gap-1"><div class="w-2 h-2 rounded-sm bg-slate-600"></div>Total runs</div>
+                    <div class="flex items-center gap-1"><div class="w-2 h-2 rounded-sm bg-white"></div>Wins</div>
+                </div>
+            </div>
+            <div id="perf-chart" class="flex gap-8 items-end justify-around h-48"></div>
+            <div id="perf-empty" class="hidden text-center text-xs text-slate-500 py-12">Run queries to see agent performance data</div>
+        </div>
+        <div class="card p-4">
+            <h3 class="text-xs font-semibold text-white mb-3">Agent Specialties</h3>
+            <div id="agent-specialties" class="space-y-2"></div>
+        </div>
+    </div>
+
+    <!-- Session List -->
+    <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-bold text-white">Recent Sessions</h3>
+        <span id="session-count" class="text-[10px] text-slate-500"></span>
+    </div>
     <div id="history-list" class="space-y-2"></div>
 </div>
 </main>
@@ -406,16 +453,27 @@ async function loadHistory(){
     try{
         const r=await fetch('/api/history');const s=await r.json();
         const el=document.getElementById('history-list');
-        if(!s.length){el.innerHTML='<div class="text-slate-500 text-xs py-4 text-center">No sessions yet</div>';return}
+        const countEl=document.getElementById('session-count');
+        if(countEl)countEl.textContent=`${s.length} session${s.length===1?'':'s'}`;
+        if(!s.length){el.innerHTML='<div class="card p-8 text-center"><div class="text-slate-500 text-sm mb-1">No sessions yet</div><div class="text-[10px] text-slate-600">Run a Prism query from the Ask tab to see history here</div></div>';return}
+        const colors={red:'#EF4444',blue:'#3B82F6',green:'#10B981'};
         el.innerHTML=s.map(s=>{
-            let m='';try{const p=typeof s.merged_result==='string'?JSON.parse(s.merged_result):s.merged_result;m=p?.merged_response||JSON.stringify(p).slice(0,150)}catch{m=String(s.merged_result||'').slice(0,150)}
-            return`<div class="card px-3.5 py-2.5 card-hover transition cursor-pointer" onclick="toggleSession(${s.id},this)">
-                <div class="flex items-center justify-between mb-1"><span class="text-xs text-white font-medium">${esc(s.user_request)}</span><span class="text-[10px] text-slate-500">${new Date(s.created_at).toLocaleString()}</span></div>
-                <div class="text-[11px] text-slate-400 line-clamp-2">${esc(m)}</div>
+            let m='',primary='';
+            try{const p=typeof s.merged_result==='string'?JSON.parse(s.merged_result):s.merged_result;m=p?.merged_response||'';primary=(p?.primary_agent||'').toLowerCase()}catch{m=String(s.merged_result||'').slice(0,150)}
+            const winnerBadge=primary && colors[primary]?`<span class="tool-pill text-white shrink-0" style="background:${colors[primary]}">${primary} ★</span>`:'';
+            return`<div class="card px-4 py-3 card-hover transition cursor-pointer" onclick="toggleSession(${s.id},this)">
+                <div class="flex items-start justify-between gap-3 mb-1.5">
+                    <div class="flex items-start gap-2 flex-1 min-w-0">
+                        ${winnerBadge}
+                        <span class="text-xs text-white font-medium truncate">${esc(s.user_request)}</span>
+                    </div>
+                    <span class="text-[10px] text-slate-500 shrink-0">${new Date(s.created_at).toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+                </div>
+                <div class="text-[11px] text-slate-400 line-clamp-2">${esc(m.slice(0,200))}</div>
                 <div id="session-detail-${s.id}" class="hidden mt-3 pt-3 border-t border-slate-800"></div>
             </div>`
         }).join('')
-    }catch(e){}
+    }catch(e){console.error(e)}
 }
 
 async function toggleSession(id,card){
@@ -460,7 +518,77 @@ async function toggleSession(id,card){
     }catch(e){el.innerHTML='<div class="text-[11px] text-red-400">Failed to load detail</div>'}
 }
 
-async function loadAgentStats(){try{const r=await fetch('/api/agent-stats');const d=await r.json();const el=document.getElementById('perf-chart');const empty=document.getElementById('perf-empty');const agents=[{k:'red',l:'Red',c:'#EF4444'},{k:'blue',l:'Blue',c:'#3B82F6'},{k:'green',l:'Green',c:'#10B981'}];if(!agents.some(a=>(d[a.k]?.total||0)>0)){el.classList.add('hidden');empty.classList.remove('hidden');return}el.classList.remove('hidden');empty.classList.add('hidden');const mx=Math.max(...agents.map(a=>d[a.k]?.total||0),1);el.innerHTML=agents.map(a=>{const v=d[a.k]||{selected:0,total:0,avg_time_ms:0,win_rate:0};const h=Math.max((v.total/mx)*100,10);const sh=v.total>0?(v.selected/mx)*100:0;return`<div class="flex flex-col items-center gap-1.5 flex-1"><div class="text-xs font-bold" style="color:${a.c}">${v.win_rate||0}%</div><div class="w-full flex justify-center" style="height:130px"><div class="relative w-full max-w-[50px] rounded-t-md overflow-hidden" style="height:${h}%;background:${a.c}15;border:1px solid ${a.c}30"><div class="absolute bottom-0 left-0 right-0" style="height:${h>0?sh/h*100:0}%;background:${a.c};opacity:0.6"></div></div></div><div class="text-[11px] font-semibold" style="color:${a.c}">${a.l}</div><div class="text-[10px] text-slate-500">${v.selected}/${v.total}</div></div>`}).join('')}catch(e){}}
+async function loadAgentStats(){
+    try{
+        const r=await fetch('/api/agent-stats');const d=await r.json();
+        const agents=[
+            {k:'red',l:'Red',c:'#EF4444',sub:'Speed · Action-first',spec:'Quick wins, minimal tool calls'},
+            {k:'blue',l:'Blue',c:'#3B82F6',sub:'Depth · Research-heavy',spec:'Structured plans, cross-references'},
+            {k:'green',l:'Green',c:'#10B981',sub:'Creative · Lateral',spec:'Hidden insights, unexpected angles'}
+        ];
+
+        // Calculate KPIs
+        const totalSessions=Math.max(...agents.map(a=>d[a.k]?.total||0));
+        const totalTools=agents.reduce((s,a)=>s+(d[a.k]?.tool_count||0),0);
+        const allTimes=agents.map(a=>d[a.k]?.avg_time_ms||0).filter(x=>x>0);
+        const avgTime=allTimes.length?Math.round(allTimes.reduce((a,b)=>a+b,0)/allTimes.length/1000):0;
+        let topAgent=null,topRate=0;
+        agents.forEach(a=>{const wr=d[a.k]?.win_rate||0;if(wr>topRate){topRate=wr;topAgent=a}});
+
+        // Update KPIs
+        document.getElementById('kpi-sessions').textContent=totalSessions;
+        document.getElementById('kpi-avg-time').textContent=avgTime?avgTime+'s':'-';
+        document.getElementById('kpi-tools').textContent=totalTools||'-';
+        if(topAgent){
+            document.getElementById('kpi-top-agent').innerHTML=`<span style="color:${topAgent.c}">${topAgent.l}</span>`;
+            document.getElementById('kpi-top-rate').textContent=`${topRate}% win rate`;
+        }else{
+            document.getElementById('kpi-top-agent').innerHTML='<span class="text-slate-500">-</span>';
+            document.getElementById('kpi-top-rate').textContent='no data yet';
+        }
+
+        // Specialties panel (always shown)
+        document.getElementById('agent-specialties').innerHTML=agents.map(a=>{
+            const v=d[a.k]||{};
+            return `<div class="flex items-start gap-2 p-2 rounded-lg" style="background:${a.c}08">
+                <div class="w-1 h-full rounded-sm" style="background:${a.c};min-height:32px"></div>
+                <div class="flex-1">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] font-bold" style="color:${a.c}">${a.l}</span>
+                        <span class="text-[10px] text-slate-500">${v.win_rate||0}%</span>
+                    </div>
+                    <div class="text-[10px] text-slate-500">${a.spec}</div>
+                </div>
+            </div>`
+        }).join('');
+
+        // Chart
+        const el=document.getElementById('perf-chart');const empty=document.getElementById('perf-empty');
+        if(!agents.some(a=>(d[a.k]?.total||0)>0)){
+            el.classList.add('hidden');empty.classList.remove('hidden');return
+        }
+        el.classList.remove('hidden');empty.classList.add('hidden');
+        const mx=Math.max(...agents.map(a=>d[a.k]?.total||0),1);
+        el.innerHTML=agents.map(a=>{
+            const v=d[a.k]||{selected:0,total:0,avg_time_ms:0,win_rate:0};
+            const totalH=Math.max((v.total/mx)*100,8);
+            const winH=v.total>0?(v.selected/mx)*100:0;
+            return `<div class="flex flex-col items-center gap-2 flex-1 max-w-[100px]">
+                <div class="text-xl font-bold" style="color:${a.c}">${v.win_rate||0}%</div>
+                <div class="w-full flex justify-center" style="height:140px">
+                    <div class="relative w-full max-w-[60px] rounded-t-lg overflow-hidden" style="height:${totalH}%;background:${a.c}15;border:1px solid ${a.c}40">
+                        <div class="absolute bottom-0 left-0 right-0 transition-all duration-700" style="height:${totalH>0?winH/totalH*100:0}%;background:${a.c}"></div>
+                    </div>
+                </div>
+                <div class="text-center">
+                    <div class="text-[11px] font-bold" style="color:${a.c}">${a.l}</div>
+                    <div class="text-[9px] text-slate-500">${a.sub}</div>
+                    <div class="text-[10px] text-slate-400 mt-1">${v.selected}/${v.total} wins · ${v.avg_time_ms?(v.avg_time_ms/1000).toFixed(1)+'s':'-'}</div>
+                </div>
+            </div>`
+        }).join('');
+    }catch(e){console.error(e)}
+}
 
 // ═══ Workflows ═══
 let _wfEs=null;

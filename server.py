@@ -479,14 +479,15 @@ async def get_connections():
 
 @app.get("/api/agent-stats")
 async def get_agent_stats():
-    """Agent performance analytics — which agent gets selected most."""
+    """Agent performance analytics — wins, runtime, tool usage."""
     if not _db_pool:
-        return {"red": {"selected": 0, "total": 0}, "blue": {"selected": 0, "total": 0}, "green": {"selected": 0, "total": 0}}
+        return {"red": {"selected": 0, "total": 0, "tool_count": 0}, "blue": {"selected": 0, "total": 0, "tool_count": 0}, "green": {"selected": 0, "total": 0, "tool_count": 0}}
     rows = await _db_pool.fetch(
         """SELECT agent_name,
                   COUNT(*) as total,
                   SUM(CASE WHEN was_selected THEN 1 ELSE 0 END) as selected,
-                  AVG(execution_time_ms) as avg_time_ms
+                  AVG(execution_time_ms) as avg_time_ms,
+                  COALESCE(SUM(array_length(tools_used, 1)), 0) as tool_count
            FROM agent_performance
            GROUP BY agent_name"""
     )
@@ -497,6 +498,7 @@ async def get_agent_stats():
             "total": int(r["total"]),
             "avg_time_ms": int(r["avg_time_ms"] or 0),
             "win_rate": round(int(r["selected"]) / max(int(r["total"]), 1) * 100, 1),
+            "tool_count": int(r["tool_count"] or 0),
         }
     return stats
 
