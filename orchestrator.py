@@ -401,7 +401,8 @@ class Orchestrator:
         return {"red": feedbacks[0], "blue": feedbacks[1], "green": feedbacks[2]}
 
     async def _run_agent(self, agent: LlmAgent, name: str, color: str, request: str, callback=None) -> AgentResult:
-        """Run a single ADK agent with timeout."""
+        """Run a single ADK agent with timeout (Blue gets longer since it's depth-focused)."""
+        timeout = 150 if name == "blue" else 120
         try:
             return await asyncio.wait_for(
                 run_adk_agent(
@@ -409,10 +410,10 @@ class Orchestrator:
                     query=request, session_service=self.session_service,
                     callback=callback,
                 ),
-                timeout=90,
+                timeout=timeout,
             )
         except asyncio.TimeoutError:
-            return AgentResult(agent_name=name, color=color, response="", error="Agent timed out after 90 seconds")
+            return AgentResult(agent_name=name, color=color, response="", error=f"Agent timed out after {timeout} seconds")
         except Exception as e:
             return AgentResult(agent_name=name, color=color, response="", error=str(e))
 
