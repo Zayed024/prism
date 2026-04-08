@@ -3,7 +3,7 @@ set -e
 
 # ── CONFIG ──────────────────────────────────────────────────
 PROJECT_ID="responsive-amp-438114-j0"
-REGION="us-central1"
+REGION="us-east4"  # Cloud Run region (must match AlloyDB region)
 SERVICE_NAME="prism"
 VPC_CONNECTOR="pantry-vpc-connector"  # Reuse existing VPC connector
 
@@ -15,6 +15,8 @@ DB_NAME="postgres"
 
 # Gemini config — use Vertex AI on Cloud Run for higher rate limits
 GEMINI_MODEL="gemini-3-flash-preview"
+# Vertex AI location — use 'global' for Gemini 3 Flash Preview (it's not in regional endpoints)
+VERTEX_LOCATION="global"
 
 DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${ALLOYDB_IP}:5432/${DB_NAME}"
 
@@ -32,7 +34,7 @@ gcloud run deploy "$SERVICE_NAME" \
     --platform=managed \
     --allow-unauthenticated \
     --vpc-connector="$VPC_CONNECTOR" \
-    --set-env-vars="DATABASE_URL=${DATABASE_URL},GEMINI_MODEL=${GEMINI_MODEL},GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${REGION}" \
+    --set-env-vars="DATABASE_URL=${DATABASE_URL},GEMINI_MODEL=${GEMINI_MODEL},GOOGLE_GENAI_USE_VERTEXAI=TRUE,GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${VERTEX_LOCATION}" \
     --memory=2Gi \
     --cpu=2 \
     --min-instances=0 \

@@ -202,11 +202,14 @@ async def update_task(
     return json.dumps(_enrich_with_momentum(dict(task)))
 
 
-@mcp.tool(name="delete_task", description="Delete a task by its ID.")
+@mcp.tool(name="delete_task", description="DESTRUCTIVE: Permanently delete a task by ID. Only call this if the user EXPLICITLY says 'delete'. To mark a task done, use update_task with status='done' instead. Requires confirm=True parameter as a safety check.")
 async def delete_task(
     task_id: int = Field(description="The task ID to delete"),
+    confirm: bool = Field(default=False, description="Must be True to actually delete. Defaults to False as a safety check."),
     ctx=None,
 ) -> str:
+    if not confirm:
+        return json.dumps({"error": "Delete blocked: confirm=True required. Did the user explicitly ask to delete? If they want to mark as done, use update_task with status='done' instead."})
     if _use_db:
         pool = _pool
         row = await pool.fetchrow("DELETE FROM tasks WHERE id = $1 RETURNING id, title", task_id)

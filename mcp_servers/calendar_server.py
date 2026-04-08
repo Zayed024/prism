@@ -97,10 +97,13 @@ async def find_free_slots(
     return json.dumps({"date": date, "duration_minutes": duration_minutes, "free_slots": free})
 
 
-@mcp.tool(name="delete_event", description="Delete a calendar event by its ID.")
+@mcp.tool(name="delete_event", description="DESTRUCTIVE: Delete a calendar event. Only call if user EXPLICITLY says 'delete' or 'cancel'. Requires confirm=True as a safety check.")
 async def delete_event(
     event_id: str = Field(description="The event ID to delete"),
+    confirm: bool = Field(default=False, description="Must be True to actually delete. Defaults to False as a safety check."),
 ) -> str:
+    if not confirm:
+        return json.dumps({"error": "Delete blocked: confirm=True required. Did the user explicitly ask to cancel this event?"})
     global EVENTS
     before = len(EVENTS)
     EVENTS = [e for e in EVENTS if e["id"] != event_id]
